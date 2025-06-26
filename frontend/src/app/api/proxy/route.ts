@@ -1,5 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+export const config = {
+  api: {
+    bodyParser: {
+      sizeLimit: '20mb',
+    },
+    responseLimit: '20mb',
+  },
+};
+
 /**
  * Secure proxy to the backend API
  * This keeps the API key on the server side and never exposes it to the client

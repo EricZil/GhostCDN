@@ -4,6 +4,13 @@ import { NextRequest, NextResponse } from 'next/server';
  * Secure proxy for file uploads to the backend API
  * This keeps the API key on the server side and never exposes it to the client
  */
+export const config = {
+  api: {
+    bodyParser: false,
+    responseLimit: '20mb',
+  },
+};
+
 export async function POST(request: NextRequest) {
   try {
     const API_URL = process.env.API_URL;

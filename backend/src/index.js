@@ -3,6 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
+const bodyParser = require('body-parser');
 
 const uploadRoutes = require('./routes/upload.routes');
 const storageRoutes = require('./routes/storage.routes');
@@ -14,7 +15,14 @@ const PORT = process.env.PORT || 3001;
 // Middleware
 app.use(helmet());
 app.use(cors());
-app.use(express.json());
+
+// Increase JSON body parser limit
+app.use(bodyParser.json({ limit: '20mb' }));
+app.use(bodyParser.urlencoded({ limit: '20mb', extended: true }));
+
+// For regular JSON requests
+app.use(express.json({ limit: '20mb' }));
+
 app.use(morgan('dev'));
 
 // Health check endpoint (no API key required)

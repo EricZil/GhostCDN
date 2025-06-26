@@ -66,12 +66,21 @@ const fileFilter = (req, file, cb) => {
   }
 };
 
-// Configure multer upload
-const upload = multer({ 
+// Guest upload configuration - 10MB limit
+const guestUpload = multer({ 
   storage: storage,
   fileFilter: fileFilter,
   limits: {
     fileSize: 10 * 1024 * 1024, // 10MB limit
+  }
+});
+
+// Registered user upload configuration - 100MB limit
+const userUpload = multer({ 
+  storage: storage,
+  fileFilter: fileFilter,
+  limits: {
+    fileSize: 100 * 1024 * 1024, // 100MB limit
   }
 });
 
@@ -85,10 +94,10 @@ const extractToken = (req, res, next) => {
 };
 
 // Guest upload route
-router.post('/guest', upload.single('file'), uploadController.uploadGuestFile);
+router.post('/guest', guestUpload.single('file'), uploadController.uploadGuestFile);
 
 // User upload route (will need auth middleware in the future)
-router.post('/user', upload.single('file'), extractToken, uploadController.uploadUserFile);
+router.post('/user', userUpload.single('file'), extractToken, uploadController.uploadUserFile);
 
 // Delete file route
 router.delete('/:fileKey', uploadController.deleteFile);
