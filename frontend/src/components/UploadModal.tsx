@@ -83,8 +83,8 @@ export default function UploadModal({ isOpen, onClose, initialFile = null }: Upl
   }, [isAuthenticated, optimizeImage, reset, result.success, estimateOptimization]);
 
   useEffect(() => {
-    if (!isOpen) return;
-    
+      if (!isOpen) return;
+      
     function handlePaste(e: ClipboardEvent) {
       if (e.clipboardData && e.clipboardData.files.length > 0) {
         const pastedFile = e.clipboardData.files[0];
@@ -146,8 +146,8 @@ export default function UploadModal({ isOpen, onClose, initialFile = null }: Upl
   }
 
   function handleClose() {
-    resetAll();
-    onClose();
+      resetAll();
+      onClose();
   }
 
   function handleOptimizeChange(value: boolean) {
@@ -176,14 +176,14 @@ export default function UploadModal({ isOpen, onClose, initialFile = null }: Upl
       
       <div className={`modal-container relative z-10 w-full h-full ${animationState.container ? 'modal-container-enter' : ''}`}>
         <div className="modal-content bg-[rgba(15,15,25,0.98)] backdrop-blur-xl border border-[rgba(124,58,237,0.3)] rounded-none shadow-[0_0_50px_rgba(124,58,237,0.4)] overflow-hidden h-screen w-screen">
-          <button 
-            onClick={handleClose}
+            <button 
+              onClick={handleClose}
             className="absolute top-4 right-4 z-50 w-8 h-8 flex items-center justify-center rounded-full hover:bg-white/10 transition-colors outline-none focus:outline-none focus:ring-0"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
           
           <div className="p-6 h-screen flex flex-col">
             {!result.success ? (
@@ -207,9 +207,9 @@ export default function UploadModal({ isOpen, onClose, initialFile = null }: Upl
                 progress={progress}
                 error={error}
                 isDragging={isDragging}
-                onDragOver={onDragOver}
-                onDragLeave={onDragLeave}
-                onDrop={onDrop}
+                  onDragOver={onDragOver}
+                  onDragLeave={onDragLeave}
+                  onDrop={onDrop}
                 isAuthenticated={isAuthenticated}
               />
             ) : (
@@ -218,7 +218,7 @@ export default function UploadModal({ isOpen, onClose, initialFile = null }: Upl
                 copied={copied}
                 copyToClipboard={copyToClipboard}
               />
-            )}
+              )}
           </div>
         </div>
       </div>
