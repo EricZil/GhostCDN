@@ -1,9 +1,13 @@
 const { S3Client, DeleteObjectCommand } = require('@aws-sdk/client-s3');
 const { Upload } = require('@aws-sdk/lib-storage');
+const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
+const { PutObjectCommand, HeadObjectCommand, PutObjectAclCommand, GetObjectCommand } = require('@aws-sdk/client-s3');
 const { v4: uuidv4 } = require('uuid');
 const fs = require('fs');
 const sharp = require('sharp');
 const path = require('path');
+const { Readable } = require('stream');
+const os = require('os');
 
 // Storage provider configurations
 const r2Config = {
@@ -29,31 +33,31 @@ const doSpacesConfig = {
   forcePathStyle: false,
 };
 
-// Initialize storage providers
-
 // Client instances
 const r2Client = new S3Client(r2Config);
 const doSpacesClient = new S3Client(doSpacesConfig);
 
+// Thumbnail size definitions
+const THUMBNAIL_SIZES = {
+  small: { width: 150, height: 150 },
+  medium: { width: 400, height: 400 },
+  large: { width: 800, height: 800 }
+};
+
 class StorageService {
   /**
-   * Upload file to the appropriate storage provider
-   * @param {Object} file - File object from multer
+   * Generate a presigned URL for direct upload to storage
+   * @param {Object} fileInfo - Information about the file to upload
+   * @param {string} fileInfo.filename - Original filename
+   * @param {string} fileInfo.contentType - File MIME type
+   * @param {number} fileInfo.fileSize - File size in bytes
    * @param {boolean} isRegisteredUser - Whether the user is registered
    * @param {Object} options - Upload options
-   * @param {boolean} options.optimize - Whether to optimize the image
-   * @param {boolean} options.preserveExif - Whether to preserve EXIF metadata
-   * @param {boolean} options.generateThumbnails - Whether to generate thumbnails
-   * @returns {Promise<Object>} - Upload result with URL
+   * @returns {Promise<Object>} - Presigned URL and file details
    */
-  async uploadFile(file, isRegisteredUser = false, options = {}) {
+  async getPresignedUrl(fileInfo, isRegisteredUser = false, options = {}) {
     try {
-      // Extract options with defaults
-      const { 
-        optimize = true, 
-        preserveExif = false, 
-        generateThumbnails = false 
-      } = options;
+      const { filename, contentType, fileSize } = fileInfo;
 
       // Choose provider based on user status
       const client = isRegisteredUser ? r2Client : doSpacesClient;
@@ -61,199 +65,339 @@ class StorageService {
         ? process.env.R2_BUCKET_NAME 
         : process.env.DO_SPACES_BUCKET_NAME;
       
-      // Select the appropriate storage provider based on user status
+      // Generate a unique file key
+      const fileExtension = path.extname(filename).toLowerCase();
+      const fileKey = `${uuidv4()}${fileExtension}`;
       
-      // Get file information
-      const fileExtension = path.extname(file.originalname).toLowerCase();
-      const fileName = file.filename || `${uuidv4()}${fileExtension}`;
-      const isImage = /\.(jpg|jpeg|png|gif|webp)$/i.test(fileExtension);
+      // Store upload options as metadata
+      const metadata = {
+        'original-filename': filename,
+        'optimize': options.optimize !== false ? 'true' : 'false',
+        'preserve-exif': options.preserveExif === true ? 'true' : 'false',
+        'generate-thumbnails': options.generateThumbnails === true ? 'true' : 'false',
+      };
       
-      let fileBuffer;
-      let contentType = file.mimetype;
-
-      // Check if file exists
-      if (!fs.existsSync(file.path)) {
-        throw new Error(`File not found at path: ${file.path}`);
-      }
-
-      // Process image if needed
-      if (isImage && (optimize || !preserveExif || generateThumbnails)) {
-        try {
-          let sharpInstance = sharp(file.path);
-          
-          // Configure Sharp based on options
-          if (!preserveExif) {
-            sharpInstance = sharpInstance.withMetadata({ exif: {} });
-          }
-          
-          if (optimize) {
-            // Apply optimization based on image type with high quality/lossless settings
+      // Create the command for putting an object
+      const command = new PutObjectCommand({
+        Bucket: bucketName,
+        Key: fileKey,
+        ContentType: contentType,
+        ACL: 'public-read',
+        Metadata: metadata,
+      });
+      
+      // Generate the presigned URL with a 15-minute expiration
+      const presignedUrl = await getSignedUrl(client, command, { expiresIn: 900 });
+      
+      // URL encode the filename for use in URLs
+      const encodedFileKey = encodeURIComponent(fileKey);
+      
+      // Generate public URL for after the upload is complete
+      const cdnUrl = isRegisteredUser
+        ? `${process.env.R2_PUBLIC_URL}/${encodedFileKey}`
+        : `${process.env.DO_SPACES_PUBLIC_URL}/${encodedFileKey}`;
+      
+      return {
+        presignedUrl,
+        fileKey,
+        cdnUrl,
+        provider: isRegisteredUser ? 'cloudflare-r2' : 'digitalocean-spaces',
+        contentType,
+        uploadMethod: 'presigned',
+      };
+    } catch (error) {
+      console.error('Error generating presigned URL:', error);
+      throw error;
+    }
+  }
+  
+  /**
+   * Set an object's ACL to public-read
+   * @param {string} fileKey - The key of the file
+   * @param {boolean} isRegisteredUser - Whether the user is registered
+   * @returns {Promise<void>}
+   */
+  async setObjectPublic(fileKey, isRegisteredUser = false) {
+    try {
+      const client = isRegisteredUser ? r2Client : doSpacesClient;
+      const bucketName = isRegisteredUser 
+        ? process.env.R2_BUCKET_NAME 
+        : process.env.DO_SPACES_BUCKET_NAME;
+      
+      const command = new PutObjectAclCommand({
+        Bucket: bucketName,
+        Key: fileKey,
+        ACL: 'public-read'
+      });
+      
+      await client.send(command);
+      console.log(`Successfully set ${fileKey} to public-read`);
+    } catch (error) {
+      console.error(`Error setting ACL for ${fileKey}:`, error);
+      throw error;
+    }
+  }
+  
+  /**
+   * Process an image based on upload options
+   * @param {Buffer} imageBuffer - The image data
+   * @param {string} fileKey - The key of the file
+   * @param {Object} options - Processing options
+   * @returns {Promise<Buffer>} - Processed image buffer
+   */
+  async processImage(imageBuffer, fileKey, options = {}) {
+    try {
+      const fileExtension = path.extname(fileKey).toLowerCase();
+      let image = sharp(imageBuffer);
+      
+      // Get image metadata
+      const metadata = await image.metadata();
+      
+      // Only process if optimize is enabled
+      if (options.optimize) {
+        // Determine output format based on input
+        let outputOptions = {};
+        
+        switch (fileExtension) {
+          case '.jpg':
+          case '.jpeg':
+            outputOptions = { 
+              quality: 80,
+              mozjpeg: true
+            };
+            break;
+          case '.png':
+            outputOptions = { 
+              quality: 75,
+              compressionLevel: 9,
+              palette: true
+            };
+            break;
+          case '.webp':
+            outputOptions = { 
+              quality: 80,
+              effort: 6
+            };
+            break;
+          case '.gif':
+            // GIF optimization is limited in sharp
+            break;
+          default:
+            // Use default settings for other formats
+            outputOptions = { quality: 80 };
+        }
+        
+        // If preserveExif is false, strip metadata
+        if (!options.preserveExif) {
+          image = image.withMetadata(false);
+        } else {
+          // Keep original metadata
+          image = image.withMetadata();
+        }
+        
+        // Apply format-specific optimizations
             if (fileExtension === '.jpg' || fileExtension === '.jpeg') {
-              // High quality JPEG with minimal compression
-              sharpInstance = sharpInstance.jpeg({ 
-                quality: 95,       // Higher quality (95 instead of 85)
-                mozjpeg: true,     // Still use mozjpeg for better compression
-                optimizeCoding: true, // Optimize Huffman coding tables
-                trellisQuantisation: false, // Disable trellis quantization to preserve quality
-                overshootDeringing: true,   // Reduce ringing artifacts
-                optimizeScans: true,        // Progressive rendering optimization
-              });
+          image = image.jpeg(outputOptions);
             } else if (fileExtension === '.png') {
-              // Lossless PNG compression
-              sharpInstance = sharpInstance.png({ 
-                compressionLevel: 9,  // Maximum compression
-                adaptiveFiltering: true, // Adaptive filtering for better compression
-                palette: false,      // Don't use palette to preserve full color information
-                quality: 100,        // Maximum quality
-                effort: 10,          // Maximum compression effort
-                colors: 256,         // Maximum colors for palette mode (if used)
-              });
+          image = image.png(outputOptions);
             } else if (fileExtension === '.webp') {
-              // Near-lossless WebP
-              sharpInstance = sharpInstance.webp({ 
-                quality: 95,       // Higher quality (95 instead of 85)
-                lossless: true,    // Use lossless compression
-                nearLossless: true, // Use near-lossless mode
-                smartSubsample: true, // Intelligent chroma subsampling
-                effort: 6,         // Higher compression effort
-              });
-            } else if (fileExtension === '.gif') {
-              // Preserve GIF as is, just optimize
-              sharpInstance = sharpInstance.gif({
-                // GIF options are limited but we can ensure it's optimized
-                effort: 10, // Maximum effort for compression
-              });
-            }
-          }
+          image = image.webp(outputOptions);
+        }
+      }
+      
+      // Return the processed buffer
+      return await image.toBuffer();
+    } catch (error) {
+      console.error('Error processing image:', error);
+      // Return original buffer if processing fails
+      return imageBuffer;
+    }
+  }
+  
+  /**
+   * Generate thumbnails for an image
+   * @param {Buffer} imageBuffer - The image data
+   * @param {string} fileKey - The key of the file
+   * @param {boolean} isRegisteredUser - Whether the user is registered
+   * @returns {Promise<Object>} - Thumbnail URLs
+   */
+  async generateThumbnails(imageBuffer, fileKey, isRegisteredUser = false) {
+    try {
+      const client = isRegisteredUser ? r2Client : doSpacesClient;
+      const bucketName = isRegisteredUser 
+        ? process.env.R2_BUCKET_NAME 
+        : process.env.DO_SPACES_BUCKET_NAME;
+      
+      const baseKey = fileKey.substring(0, fileKey.lastIndexOf('.'));
+      const fileExtension = path.extname(fileKey).toLowerCase();
+      
+      // For better compatibility and smaller size, convert all thumbnails to WebP
+      const thumbnailExtension = '.webp';
+      const thumbnailContentType = 'image/webp';
+      
+      const thumbnailUrls = {};
+      const image = sharp(imageBuffer);
+      const metadata = await image.metadata();
+      
+      // Generate thumbnails for each size
+      for (const [size, dimensions] of Object.entries(THUMBNAIL_SIZES)) {
+        try {
+          // Create thumbnail key
+          const thumbnailKey = `${baseKey}_${size}${thumbnailExtension}`;
           
-          // Get processed buffer
-          fileBuffer = await sharpInstance.toBuffer();
-          
-          // Generate thumbnails if requested
-          if (generateThumbnails && isImage) {
-            const thumbnailSizes = [200, 400, 800];
-            for (const size of thumbnailSizes) {
-              const thumbnailBuffer = await sharp(file.path)
-                .resize(size, null, { 
-                  withoutEnlargement: true,
-                  kernel: 'lanczos3', // High-quality downsampling
+          // Resize image while maintaining aspect ratio and not enlarging
+          const thumbnailBuffer = await image
+            .clone()
+            .resize({
+              width: dimensions.width,
+              height: dimensions.height,
                   fit: 'inside',
+              withoutEnlargement: true
                 })
+            .webp({ quality: 80 })
                 .toBuffer();
                 
-              const thumbnailKey = `thumbnails/${size}/${fileName}`;
-              
-              // Upload thumbnail
-              await this.uploadBuffer(
-                thumbnailBuffer,
-                thumbnailKey,
-                contentType,
-                client,
-                bucketName
-              );
-            }
-          }
-        } catch (sharpError) {
-          console.error('Image processing error:', sharpError.message);
-          // Fall back to raw file if image processing fails
-          fileBuffer = fs.readFileSync(file.path);
+          // Upload thumbnail
+          const putCommand = new PutObjectCommand({
+            Bucket: bucketName,
+            Key: thumbnailKey,
+            Body: thumbnailBuffer,
+            ContentType: thumbnailContentType,
+            ACL: 'public-read',
+          });
+          
+          await client.send(putCommand);
+          
+          // URL encode the thumbnail key for use in URLs
+          const encodedThumbnailKey = encodeURIComponent(thumbnailKey);
+          
+          // Generate public URL for the thumbnail
+          thumbnailUrls[size] = isRegisteredUser
+            ? `${process.env.R2_PUBLIC_URL}/${encodedThumbnailKey}`
+            : `${process.env.DO_SPACES_PUBLIC_URL}/${encodedThumbnailKey}`;
+          
+          console.log(`Generated ${size} thumbnail for ${fileKey}`);
+        } catch (err) {
+          console.error(`Error generating ${size} thumbnail:`, err);
         }
-      } else {
-        // For non-images or when no processing is needed, read the file
-        fileBuffer = fs.readFileSync(file.path);
       }
-
-      // Upload the main file
-      await this.uploadBuffer(
-        fileBuffer,
-        fileName,
-        contentType,
-        client,
-        bucketName
-      );
       
-      // Clean up temp file
+      return Object.keys(thumbnailUrls).length > 0 ? thumbnailUrls : null;
+    } catch (error) {
+      console.error('Error generating thumbnails:', error);
+      return null;
+    }
+  }
+  
+  /**
+   * Complete a direct upload - perform any post-processing needed
+   * @param {string} fileKey - The key of the uploaded file
+   * @param {boolean} isRegisteredUser - Whether the user is registered
+   * @param {Object} options - Post-processing options
+   * @returns {Promise<Object>} - Result with file URLs
+   */
+  async completeDirectUpload(fileKey, isRegisteredUser = false, options = {}) {
+    try {
+      // Choose provider based on user status
+      const client = isRegisteredUser ? r2Client : doSpacesClient;
+      const bucketName = isRegisteredUser 
+        ? process.env.R2_BUCKET_NAME 
+        : process.env.DO_SPACES_BUCKET_NAME;
+      
+      // Check if the file exists and get its metadata
+      const headCommand = new HeadObjectCommand({
+        Bucket: bucketName,
+        Key: fileKey,
+      });
+      
+      let fileMetadata;
       try {
-        fs.unlinkSync(file.path);
-      } catch (unlinkError) {
-        console.error('Failed to delete temp file:', unlinkError.message);
-        // Continue even if cleanup fails
+        fileMetadata = await client.send(headCommand);
+      } catch (error) {
+        throw new Error(`File not found: ${fileKey}`);
+      }
+      
+      // Ensure the file is publicly accessible
+      await this.setObjectPublic(fileKey, isRegisteredUser);
+      
+      // Get processing options from metadata or use provided options
+      const metadata = fileMetadata.Metadata || {};
+      const processingOptions = {
+        optimize: metadata['optimize'] === 'true' || options.optimize === true,
+        preserveExif: metadata['preserve-exif'] === 'true' || options.preserveExif === true,
+        generateThumbnails: metadata['generate-thumbnails'] === 'true' || options.generateThumbnails === true,
+      };
+      
+      // Check if this is an image that needs processing
+      const fileExtension = path.extname(fileKey).toLowerCase();
+      const isImage = /\.(jpg|jpeg|png|gif|webp)$/i.test(fileExtension);
+      
+      // Download the file for processing (needed for both optimization and thumbnails)
+      let imageBuffer = null;
+      if (isImage && (processingOptions.optimize || processingOptions.generateThumbnails)) {
+        const getCommand = new GetObjectCommand({
+          Bucket: bucketName,
+          Key: fileKey,
+        });
+        
+        const { Body } = await client.send(getCommand);
+        imageBuffer = await streamToBuffer(Body);
+      }
+      
+      // Process the image if optimization is enabled
+      if (isImage && processingOptions.optimize && imageBuffer) {
+        // Process the image
+        const processedBuffer = await this.processImage(imageBuffer, fileKey, processingOptions);
+        
+        // Upload the processed image back
+        const putCommand = new PutObjectCommand({
+          Bucket: bucketName,
+          Key: fileKey,
+          Body: processedBuffer,
+          ContentType: fileMetadata.ContentType,
+          ACL: 'public-read',
+          Metadata: metadata,
+        });
+        
+        await client.send(putCommand);
+        console.log(`Successfully processed and re-uploaded ${fileKey}`);
+        
+        // Update the buffer for thumbnail generation
+        imageBuffer = processedBuffer;
       }
       
       // URL encode the filename for use in URLs
-      const encodedFileName = encodeURIComponent(fileName);
+      const encodedFileKey = encodeURIComponent(fileKey);
       
-      // Generate public URL - use the CDN URL for public access
+      // Generate public URL for the uploaded file
       const cdnUrl = isRegisteredUser
-        ? `${process.env.R2_PUBLIC_URL}/${encodedFileName}`
-        : `${process.env.DO_SPACES_PUBLIC_URL}/${encodedFileName}`;
+        ? `${process.env.R2_PUBLIC_URL}/${encodedFileKey}`
+        : `${process.env.DO_SPACES_PUBLIC_URL}/${encodedFileKey}`;
       
-      // Return the CDN URL for the uploaded file
+      // Generate thumbnails if requested and if it's an image
+      let thumbnails = null;
       
-      // Return result with thumbnail URLs if generated
-      const result = {
-        success: true,
-        url: cdnUrl,
-        key: fileName,
-        provider: isRegisteredUser ? 'cloudflare-r2' : 'digitalocean-spaces',
-      };
-      
-      // Add thumbnail URLs if they were generated
-      if (generateThumbnails && isImage) {
-        const thumbnailSizes = [200, 400, 800];
-        const thumbnailUrls = {};
-        
-        thumbnailSizes.forEach(size => {
-          const thumbnailKey = `thumbnails/${size}/${fileName}`;
-          const encodedThumbnailKey = encodeURIComponent(thumbnailKey);
-          const thumbnailUrl = isRegisteredUser
-            ? `${process.env.R2_PUBLIC_URL}/${encodedThumbnailKey}`
-            : `${process.env.DO_SPACES_PUBLIC_URL}/${encodedThumbnailKey}`;
-            
-          if (size === 200) thumbnailUrls.small = thumbnailUrl;
-          if (size === 400) thumbnailUrls.medium = thumbnailUrl;
-          if (size === 800) thumbnailUrls.large = thumbnailUrl;
-        });
-        
-        result.thumbnails = thumbnailUrls;
+      if (isImage && processingOptions.generateThumbnails && imageBuffer) {
+        thumbnails = await this.generateThumbnails(imageBuffer, fileKey, isRegisteredUser);
       }
       
-      return result;
+      return {
+        success: true,
+        url: cdnUrl,
+        key: fileKey,
+        provider: isRegisteredUser ? 'cloudflare-r2' : 'digitalocean-spaces',
+        thumbnails,
+      };
     } catch (error) {
-      console.error('Storage service upload error:', error);
+      console.error('Error completing direct upload:', error);
       throw error;
     }
   }
 
   /**
-   * Helper method to upload a buffer to storage
-   * @param {Buffer} buffer - The file buffer to upload
-   * @param {string} key - The file key/name
-   * @param {string} contentType - The file content type
-   * @param {S3Client} client - The S3 client to use
-   * @param {string} bucketName - The bucket name
-   * @returns {Promise<Object>} - Upload result
-   */
-  async uploadBuffer(buffer, key, contentType, client, bucketName) {
-    const upload = new Upload({
-      client,
-      params: {
-        Bucket: bucketName,
-        Key: key,
-        Body: buffer,
-        ContentType: contentType,
-        ACL: 'public-read',
-      },
-    });
-
-    await upload.done();
-    return { key };
-  }
-
-  /**
-   * Delete file from storage provider
-   * @param {string} fileKey - File key/name
-   * @param {boolean} isRegisteredUser - Whether the file is in R2 or Spaces
+   * Delete a file from storage
+   * @param {string} fileKey - The key of the file to delete
+   * @param {boolean} isRegisteredUser - Whether the user is registered
    * @returns {Promise<Object>} - Delete result
    */
   async deleteFile(fileKey, isRegisteredUser = false) {
@@ -270,32 +414,41 @@ class StorageService {
       
       await client.send(command);
       
-      // Also try to delete thumbnails if they exist
-      try {
-        const thumbnailSizes = [200, 400, 800];
-        for (const size of thumbnailSizes) {
-          const thumbnailKey = `thumbnails/${size}/${fileKey}`;
-          const thumbnailDeleteParams = {
+      // Also delete thumbnails if they exist
+      const baseKey = fileKey.substring(0, fileKey.lastIndexOf('.'));
+      const thumbnailExtension = '.webp';
+      
+      for (const size of Object.keys(THUMBNAIL_SIZES)) {
+        try {
+          const thumbnailKey = `${baseKey}_${size}${thumbnailExtension}`;
+          const deleteThumbnailCommand = new DeleteObjectCommand({
             Bucket: bucketName,
             Key: thumbnailKey,
-          };
-          const thumbnailCommand = new DeleteObjectCommand(thumbnailDeleteParams);
-          await client.send(thumbnailCommand);
+          });
+          
+          await client.send(deleteThumbnailCommand);
+          console.log(`Deleted thumbnail: ${thumbnailKey}`);
+        } catch (err) {
+          // Ignore errors if thumbnails don't exist
         }
-      } catch (thumbnailError) {
-        // Ignore errors when deleting thumbnails
-        // Ignore errors when deleting thumbnails
       }
       
-      return {
-        success: true,
-        message: 'File deleted successfully',
-      };
+      return { success: true };
     } catch (error) {
-      console.error('Storage service delete error:', error);
+      console.error('Error deleting file:', error);
       throw error;
     }
   }
+}
+
+// Helper function to convert a stream to a buffer
+async function streamToBuffer(stream) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    stream.on('data', (chunk) => chunks.push(chunk));
+    stream.on('end', () => resolve(Buffer.concat(chunks)));
+    stream.on('error', reject);
+  });
 }
 
 module.exports = new StorageService(); 
