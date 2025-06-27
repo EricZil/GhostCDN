@@ -251,16 +251,6 @@ export default function UploadModal({ isOpen, onClose, initialFile = null }: Upl
                 copied={copied}
                 copyToClipboard={copyToClipboard}
               />
-              
-              {/* Close button at the bottom */}
-              <div className="fixed bottom-6 left-0 right-0 flex justify-center z-50">
-                <button 
-                  onClick={handleClose}
-                  className="px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-lg shadow-lg flex items-center space-x-2 transition-all"
-                >
-                  <span>Close</span>
-                </button>
-              </div>
             </div>
           )}
         </div>
