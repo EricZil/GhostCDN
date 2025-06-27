@@ -23,12 +23,10 @@ export async function POST(request: NextRequest) {
       );
     }
     
-    // Get the form data from the request
-    const formData = await request.formData();
-    
     // Get the upload type from the URL parameters
     const { searchParams } = new URL(request.url);
     const uploadType = searchParams.get('type') || 'guest';
+    const action = searchParams.get('action') || 'presigned'; // 'presigned' or 'complete'
     
     if (!['guest', 'user'].includes(uploadType)) {
       return NextResponse.json(
@@ -37,14 +35,47 @@ export async function POST(request: NextRequest) {
       );
     }
     
+    if (!['presigned', 'complete'].includes(action)) {
+      return NextResponse.json(
+        { success: false, message: 'Invalid action' },
+        { status: 400 }
+      );
+    }
+    
+    let endpoint = '';
+    let body;
+    const headers: HeadersInit = {
+      'X-API-KEY': API_KEY || '',
+      'Content-Type': 'application/json'
+    };
+    
+    if (action === 'presigned') {
+      // For presigned URL requests, we need to parse the JSON body
+      const jsonBody = await request.json();
+      body = JSON.stringify(jsonBody);
+      endpoint = `${API_URL}/upload/presigned/${uploadType}`;
+    } else if (action === 'complete') {
+      // For completion requests, we need the fileKey from the JSON body
+      const jsonBody = await request.json();
+      const { fileKey, ...options } = jsonBody;
+      
+      // Convert boolean values to strings for the backend
+      const processedOptions = Object.entries(options).reduce((acc, [key, value]) => {
+        acc[key] = typeof value === 'boolean' ? value.toString() : String(value);
+        return acc;
+      }, {} as Record<string, string>);
+      
+      body = JSON.stringify(processedOptions);
+      endpoint = `${API_URL}/upload/complete/${uploadType}/${fileKey}`;
+      
+      console.log('Sending completion request with options:', processedOptions);
+    }
+    
     // Forward the request to the backend with the API key
-    const response = await fetch(`${API_URL}/upload/${uploadType}`, {
+    const response = await fetch(endpoint, {
       method: 'POST',
-      headers: {
-        'X-API-KEY': API_KEY || '',
-        // Don't set Content-Type here, it will be set automatically with the boundary
-      },
-      body: formData
+      headers,
+      body
     });
     
     // Get the response from the backend

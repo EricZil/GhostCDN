@@ -28,7 +28,7 @@ export default function AnimatedGradientBorder({
       const elapsed = timestamp - startTime;
       
       // Calculate position (0 to 100 and back)
-      const duration = 5000; // 5 seconds
+      const duration = 6000; // 6 seconds
       const progress = (elapsed % (duration * 2)) / duration;
       const position = progress <= 1 ? progress * 100 : 200 - (progress * 100);
       
@@ -48,11 +48,11 @@ export default function AnimatedGradientBorder({
   }, []);
 
   return (
-    <div className={`relative p-[3px] group ${containerClassName}`}>
+    <div className={`relative p-[4px] group ${containerClassName}`}>
       {/* Blurred gradient background */}
       <div 
         ref={blurGradientRef}
-        className="absolute inset-0 rounded-xl opacity-60 group-hover:opacity-100 blur-xl transition-opacity duration-500"
+        className="absolute inset-0 rounded-xl opacity-70 group-hover:opacity-100 blur-2xl transition-opacity duration-500"
         style={{
           backgroundSize: '400% 400%',
           backgroundImage: 'radial-gradient(circle farthest-side at 0 100%, #00ccb1, transparent), radial-gradient(circle farthest-side at 100% 0, #7b61ff, transparent), radial-gradient(circle farthest-side at 100% 100%, #ffc414, transparent), radial-gradient(circle farthest-side at 0 0, #1ca0fb, #141316)'
@@ -66,6 +66,13 @@ export default function AnimatedGradientBorder({
         style={{
           backgroundSize: '400% 400%',
           backgroundImage: 'radial-gradient(circle farthest-side at 0 100%, #00ccb1, transparent), radial-gradient(circle farthest-side at 100% 0, #7b61ff, transparent), radial-gradient(circle farthest-side at 100% 100%, #ffc414, transparent), radial-gradient(circle farthest-side at 0 0, #1ca0fb, #141316)'
+        }}
+      ></div>
+      
+      {/* Glow effect */}
+      <div className="absolute inset-0 rounded-xl opacity-0 group-hover:opacity-60 blur-xl transition-opacity duration-500"
+        style={{
+          backgroundImage: 'radial-gradient(circle at center, rgba(124, 58, 237, 0.5) 0%, transparent 70%)',
         }}
       ></div>
       

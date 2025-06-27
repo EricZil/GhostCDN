@@ -23,7 +23,7 @@ export default function DropZone({
 
   return (
     <div 
-      className={`relative border-2 border-dashed rounded-xl p-4 transition-all flex-grow flex flex-col outline-none focus:outline-none focus:ring-0 ${
+      className={`relative border-2 border-dashed rounded-xl p-4 transition-all flex-grow flex flex-col outline-none focus:outline-none focus:ring-0 h-full ${
         isDragging 
           ? "border-accent bg-accent/5" 
           : "border-gray-300/30 dark:border-gray-700/30 hover:border-accent"

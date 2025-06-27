@@ -73,26 +73,30 @@ export default function UploadForm({
         />
       ) : (
         <div className="flex flex-col h-full">
-          <div className="flex flex-row h-full">
-            <FilePreview preview={preview} />
+          <div className="flex flex-row h-full items-stretch">
+            <div className="flex-grow">
+              <FilePreview preview={preview} />
+            </div>
             
-            <SettingsPanel
-              fileName={fileName}
-              setFileName={setFileName}
-              file={file}
-              imageDimensions={imageDimensions}
-              optimizeImage={optimizeImage}
-              setOptimizeImage={setOptimizeImage}
-              preserveExif={preserveExif}
-              setPreserveExif={setPreserveExif}
-              generateThumbnails={generateThumbnails}
-              setGenerateThumbnails={setGenerateThumbnails}
-              optimizationPreview={optimizationPreview}
-              handleUpload={handleUpload}
-              resetAll={resetAll}
-              isUploading={isUploading}
-              progress={progress}
-            />
+            <div className="flex-shrink-0">
+              <SettingsPanel
+                fileName={fileName}
+                setFileName={setFileName}
+                file={file}
+                imageDimensions={imageDimensions}
+                optimizeImage={optimizeImage}
+                setOptimizeImage={setOptimizeImage}
+                preserveExif={preserveExif}
+                setPreserveExif={setPreserveExif}
+                generateThumbnails={generateThumbnails}
+                setGenerateThumbnails={setGenerateThumbnails}
+                optimizationPreview={optimizationPreview}
+                handleUpload={handleUpload}
+                resetAll={resetAll}
+                isUploading={isUploading}
+                progress={progress}
+              />
+            </div>
           </div>
           
           {error && (

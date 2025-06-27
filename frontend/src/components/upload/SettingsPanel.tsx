@@ -43,7 +43,7 @@ export default function SettingsPanel({
   progress
 }: SettingsPanelProps) {
   return (
-    <div className="w-[380px] h-full flex flex-col bg-gradient-to-b from-[rgba(20,20,35,0.95)] to-[rgba(15,15,25,0.98)] backdrop-blur-xl rounded-xl border-0 shadow-[0_8px_16px_rgba(0,0,0,0.3)] p-6">
+    <div className="w-[380px] h-full flex flex-col bg-gradient-to-b from-[rgba(20,20,35,0.95)] to-[rgba(15,15,25,0.98)] backdrop-blur-xl rounded-xl border-0 shadow-[0_8px_16px_rgba(0,0,0,0.3)] p-6 ml-6">
       {/* File Details Section */}
       <div className="mb-6">
         <div className="flex items-center mb-5">
@@ -218,7 +218,7 @@ export default function SettingsPanel({
           <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0l-4 4m4-4v12" />
           </svg>
-          {isUploading ? `Uploading... ${progress}%` : "Upload"}
+          {isUploading ? `Uploading... ${progress.toFixed(1)}%` : "Upload"}
         </button>
         
         <button 

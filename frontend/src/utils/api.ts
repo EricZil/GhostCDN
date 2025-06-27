@@ -2,7 +2,10 @@
  * API utility functions for interacting with the GhostCDN backend
  */
 
-interface UploadOptions {
+/**
+ * Upload options for file uploads
+ */
+export interface UploadOptions {
   filename?: string;
   optimize?: boolean;
   preserveExif?: boolean;
@@ -10,67 +13,154 @@ interface UploadOptions {
 }
 
 /**
- * Upload a file as a guest user
- * @param file The file to upload
+ * Get a presigned URL for direct upload as a guest user
+ * @param fileInfo Information about the file to upload
  * @param options Upload options
- * @returns Promise with the upload result
+ * @returns Promise with the presigned URL result
  */
-export async function uploadGuestFile(file: File, options: UploadOptions = {}): Promise<{ 
+export async function getGuestPresignedUrl(
+  fileInfo: { filename: string; contentType: string; fileSize: number },
+  options: UploadOptions = {}
+): Promise<{
   success: boolean;
   message: string;
-  data?: { 
-    url: string;
-    key: string;
+  data?: {
+    presignedUrl: string;
+    fileKey: string;
+    cdnUrl: string;
     provider: string;
-    thumbnails?: {
-      small: string;
-      medium: string;
-      large: string;
-    }
+    contentType: string;
   }
 }> {
-  const formData = new FormData();
-  formData.append('file', file);
-  
-  // Add options to form data
-  if (options.filename) {
-    formData.append('filename', options.filename);
-  }
-  
-  if (options.optimize !== undefined) {
-    formData.append('optimize', options.optimize.toString());
-  }
-  
-  if (options.preserveExif !== undefined) {
-    formData.append('preserveExif', options.preserveExif.toString());
-  }
-  
-  if (options.generateThumbnails !== undefined) {
-    formData.append('generateThumbnails', options.generateThumbnails.toString());
-  }
+  const requestData = {
+    ...fileInfo,
+    ...options,
+  };
   
   // Use the secure server-side proxy
-  const response = await fetch('/api/proxy/upload?type=guest', {
+  const response = await fetch('/api/proxy/upload?type=guest&action=presigned', {
     method: 'POST',
-    body: formData,
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(requestData),
   });
   
   if (!response.ok) {
     const errorData = await response.json();
-    throw new Error(errorData.message || 'Upload failed');
+    throw new Error(errorData.message || 'Failed to get presigned URL');
   }
   
   return response.json();
 }
 
 /**
- * Upload a file as a registered user
- * @param file The file to upload
+ * Get a presigned URL for direct upload as a registered user
+ * @param fileInfo Information about the file to upload
  * @param token Authentication token
  * @param options Upload options
- * @returns Promise with the upload result
+ * @returns Promise with the presigned URL result
  */
-export async function uploadUserFile(file: File, token: string, options: UploadOptions = {}): Promise<{
+export async function getUserPresignedUrl(
+  fileInfo: { filename: string; contentType: string; fileSize: number },
+  token: string,
+  options: UploadOptions = {}
+): Promise<{
+  success: boolean;
+  message: string;
+  data?: {
+    presignedUrl: string;
+    fileKey: string;
+    cdnUrl: string;
+    provider: string;
+    contentType: string;
+  }
+}> {
+  const requestData = {
+    ...fileInfo,
+    ...options,
+    token,
+  };
+  
+  // Use the secure server-side proxy
+  const response = await fetch('/api/proxy/upload?type=user&action=presigned', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(requestData),
+  });
+  
+  if (!response.ok) {
+    const errorData = await response.json();
+    throw new Error(errorData.message || 'Failed to get presigned URL');
+  }
+  
+  return response.json();
+}
+
+/**
+ * Upload a file directly to storage using a presigned URL
+ * @param file The file to upload
+ * @param presignedUrl The presigned URL for upload
+ * @param contentType The content type of the file
+ * @param onProgress Optional progress callback
+ * @returns Promise that resolves when the upload is complete
+ */
+export async function uploadFileWithPresignedUrl(
+  file: File,
+  presignedUrl: string,
+  contentType: string,
+  onProgress?: (progress: number) => void
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    
+    // Set up progress tracking
+    if (onProgress) {
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable) {
+          const percentComplete = (event.loaded / event.total) * 100;
+          onProgress(percentComplete);
+        }
+      };
+    }
+    
+    // Set up completion handler
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve();
+      } else {
+        reject(new Error(`Upload failed with status ${xhr.status}`));
+      }
+    };
+    
+    // Set up error handler
+    xhr.onerror = () => {
+      reject(new Error('Network error during upload'));
+    };
+    
+    // Open the request
+    xhr.open('PUT', presignedUrl);
+    
+    // Set content type
+    xhr.setRequestHeader('Content-Type', contentType);
+    
+    // Send the file
+    xhr.send(file);
+  });
+}
+
+/**
+ * Complete a guest upload after direct upload is finished
+ * @param fileKey The key of the uploaded file
+ * @param options Post-processing options
+ * @returns Promise with the completion result
+ */
+export async function completeGuestUpload(
+  fileKey: string,
+  options: { generateThumbnails?: boolean } = {}
+): Promise<{
   success: boolean;
   message: string;
   data?: {
@@ -84,74 +174,71 @@ export async function uploadUserFile(file: File, token: string, options: UploadO
     }
   }
 }> {
-  const formData = new FormData();
-  formData.append('file', file);
-  
-  // Add options to form data
-  if (options.filename) {
-    formData.append('filename', options.filename);
-  }
-  
-  if (options.optimize !== undefined) {
-    formData.append('optimize', options.optimize.toString());
-  }
-  
-  if (options.preserveExif !== undefined) {
-    formData.append('preserveExif', options.preserveExif.toString());
-  }
-  
-  if (options.generateThumbnails !== undefined) {
-    formData.append('generateThumbnails', options.generateThumbnails.toString());
-  }
-  
-  // Add the auth token to the form data
-  formData.append('token', token);
+  const requestData = {
+    fileKey,
+    ...options,
+  };
   
   // Use the secure server-side proxy
-  const response = await fetch('/api/proxy/upload?type=user', {
+  const response = await fetch('/api/proxy/upload?type=guest&action=complete', {
     method: 'POST',
-    body: formData,
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(requestData),
   });
   
   if (!response.ok) {
     const errorData = await response.json();
-    throw new Error(errorData.message || 'Upload failed');
+    throw new Error(errorData.message || 'Failed to complete upload');
   }
   
   return response.json();
 }
 
 /**
- * Delete a file
- * @param fileKey The key of the file to delete
- * @param isRegisteredUser Whether the file belongs to a registered user
- * @param token Optional authentication token
- * @returns Promise with the delete result
+ * Complete a user upload after direct upload is finished
+ * @param fileKey The key of the uploaded file
+ * @param token Authentication token
+ * @param options Post-processing options
+ * @returns Promise with the completion result
  */
-export async function deleteFile(
-  fileKey: string, 
-  isRegisteredUser: boolean = false, 
-  token?: string
-): Promise<{ success: boolean; message: string }> {
+export async function completeUserUpload(
+  fileKey: string,
+  token: string,
+  options: { generateThumbnails?: boolean } = {}
+): Promise<{
+  success: boolean;
+  message: string;
+  data?: {
+    url: string;
+    key: string;
+    provider: string;
+    thumbnails?: {
+      small: string;
+      medium: string;
+      large: string;
+    }
+  }
+}> {
+  const requestData = {
+    fileKey,
+    token,
+    ...options,
+  };
+  
   // Use the secure server-side proxy
-  const response = await fetch('/api/proxy', {
+  const response = await fetch('/api/proxy/upload?type=user&action=complete', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({
-      endpoint: `upload/${fileKey}`,
-      method: 'DELETE',
-      body: { 
-        isRegisteredUser,
-        token
-      }
-    }),
+    body: JSON.stringify(requestData),
   });
   
   if (!response.ok) {
     const errorData = await response.json();
-    throw new Error(errorData.message || 'Delete failed');
+    throw new Error(errorData.message || 'Failed to complete upload');
   }
   
   return response.json();

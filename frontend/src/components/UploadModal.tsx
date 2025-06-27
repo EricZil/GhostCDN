@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useFileUpload } from "@/hooks/useFileUpload";
 import { useUploadAnimation } from "@/hooks/upload/useUploadAnimation";
 import { useClipboard } from "@/hooks/upload/useClipboard";
@@ -28,6 +28,7 @@ export default function UploadModal({ isOpen, onClose, initialFile = null }: Upl
     savingsPercent: number;
     savingsBytes: number;
   } | null>(null);
+  const [isClosing, setIsClosing] = useState(false);
   
   const { copied, copyToClipboard } = useClipboard();
   const animationState = useUploadAnimation(isOpen);
@@ -41,8 +42,41 @@ export default function UploadModal({ isOpen, onClose, initialFile = null }: Upl
     isAuthenticated,
     estimateOptimization 
   } = useFileUpload();
+  
+  // Keep track of whether we've shown the success view
+  const hasShownSuccessView = useRef(false);
+  
+  // Update the ref when result.success changes
+  useEffect(() => {
+    if (result.success) {
+      hasShownSuccessView.current = true;
+    }
+  }, [result.success]);
+  
+  // Reset when modal closes
+  useEffect(() => {
+    if (!isOpen) {
+      // Only reset if we're closing the modal
+      setTimeout(() => {
+        if (!isOpen) {
+          setFile(null);
+          setPreview(null);
+          setOptimizationPreview(null);
+          setFileName('');
+          hasShownSuccessView.current = false;
+          setIsClosing(false);
+          reset();
+        }
+      }, 300); // Delay to allow animation to complete
+    }
+  }, [isOpen, reset]);
 
   const handleFile = useCallback((newFile: File) => {
+    // Don't process a new file if we've already completed an upload successfully
+    if (hasShownSuccessView.current) {
+      return;
+    }
+    
     if (!newFile.type.startsWith('image/')) {
       return;
     }
@@ -50,10 +84,6 @@ export default function UploadModal({ isOpen, onClose, initialFile = null }: Upl
     const maxSize = isAuthenticated ? 100 * 1024 * 1024 : 10 * 1024 * 1024;
     if (newFile.size > maxSize) {
       return;
-    }
-    
-    if (result.success) {
-      reset();
     }
     
     setFile(newFile);
@@ -80,10 +110,10 @@ export default function UploadModal({ isOpen, onClose, initialFile = null }: Upl
       }
     };
     reader.readAsDataURL(newFile);
-  }, [isAuthenticated, optimizeImage, reset, result.success, estimateOptimization]);
+  }, [isAuthenticated, optimizeImage, estimateOptimization]);
 
   useEffect(() => {
-      if (!isOpen) return;
+    if (!isOpen) return;
       
     function handlePaste(e: ClipboardEvent) {
       if (e.clipboardData && e.clipboardData.files.length > 0) {
@@ -137,17 +167,18 @@ export default function UploadModal({ isOpen, onClose, initialFile = null }: Upl
     await uploadFile(file, uploadOptions);
   }
 
-  function resetAll() {
-    setFile(null);
-    setPreview(null);
-    setOptimizationPreview(null);
-    setFileName('');
-    reset();
-  }
-
   function handleClose() {
-      resetAll();
-      onClose();
+    // If we're showing the success view, add a confirmation step
+    if (result.success && !isClosing) {
+      setIsClosing(true);
+      // Add a delay to prevent accidental closing
+      setTimeout(() => {
+        onClose();
+      }, 300);
+      return;
+    }
+    
+    onClose();
   }
 
   function handleOptimizeChange(value: boolean) {
@@ -171,22 +202,22 @@ export default function UploadModal({ isOpen, onClose, initialFile = null }: Upl
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div 
         className={`absolute inset-0 bg-black/80 backdrop-blur-md modal-overlay ${animationState.overlay ? 'modal-overlay-enter' : ''}`}
-        onClick={handleClose}
+        onClick={result.success ? undefined : handleClose}
       ></div>
       
       <div className={`modal-container relative z-10 w-full h-full ${animationState.container ? 'modal-container-enter' : ''}`}>
-        <div className="modal-content bg-[rgba(15,15,25,0.98)] backdrop-blur-xl border border-[rgba(124,58,237,0.3)] rounded-none shadow-[0_0_50px_rgba(124,58,237,0.4)] overflow-hidden h-screen w-screen">
+        <div className="modal-content bg-[rgba(15,15,25,0.98)] backdrop-blur-xl border border-[rgba(124,58,237,0.3)] rounded-none shadow-[0_0_50px_rgba(0,0,0,0.3),0_0_15px_rgba(124,58,237,0.2)] w-full h-full">
             <button 
               onClick={handleClose}
-            className="absolute top-4 right-4 z-50 w-8 h-8 flex items-center justify-center rounded-full hover:bg-white/10 transition-colors outline-none focus:outline-none focus:ring-0"
+              className="fixed top-4 right-4 z-50 w-8 h-8 flex items-center justify-center rounded-full hover:bg-white/10 transition-colors outline-none focus:outline-none focus:ring-0"
             >
               <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M6 18L18 6M6 6l12 12" />
               </svg>
             </button>
           
-          <div className="p-6 h-screen flex flex-col">
-            {!result.success ? (
+          {!result.success ? (
+            <div className="h-full w-full p-6">
               <UploadForm
                 file={file}
                 preview={preview}
@@ -202,24 +233,36 @@ export default function UploadModal({ isOpen, onClose, initialFile = null }: Upl
                 optimizationPreview={optimizationPreview}
                 handleFile={handleFile}
                 handleUpload={handleUpload}
-                resetAll={resetAll}
+                resetAll={reset}
                 isUploading={isUploading}
                 progress={progress}
                 error={error}
                 isDragging={isDragging}
-                  onDragOver={onDragOver}
-                  onDragLeave={onDragLeave}
-                  onDrop={onDrop}
+                onDragOver={onDragOver}
+                onDragLeave={onDragLeave}
+                onDrop={onDrop}
                 isAuthenticated={isAuthenticated}
               />
-            ) : (
+            </div>
+          ) : (
+            <div className="h-full w-full overflow-auto">
               <SuccessView 
                 result={result}
                 copied={copied}
                 copyToClipboard={copyToClipboard}
               />
-              )}
-          </div>
+              
+              {/* Close button at the bottom */}
+              <div className="fixed bottom-6 left-0 right-0 flex justify-center z-50">
+                <button 
+                  onClick={handleClose}
+                  className="px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-lg shadow-lg flex items-center space-x-2 transition-all"
+                >
+                  <span>Close</span>
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

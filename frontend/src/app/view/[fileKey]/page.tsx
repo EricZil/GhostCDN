@@ -42,7 +42,7 @@ export default function ImageViewer() {
           throw new Error('CDN URL not configured');
         }
         
-        const directUrl = `${baseUrl}/${fileKey}`;
+        const directUrl = `${baseUrl}/${encodeURIComponent(fileKey)}`;
         
         // Load the image to get its dimensions
         const img = new window.Image();
@@ -57,12 +57,14 @@ export default function ImageViewer() {
         };
         
         img.onerror = () => {
+          console.error('Failed to load image:', directUrl);
           setErrorMessage('Failed to load image');
           setLoading(false);
         };
         
         img.src = directUrl;
       } catch (err) {
+        console.error('Error loading image:', err);
         setErrorMessage(err instanceof Error ? err.message : 'Failed to load image information');
         setLoading(false);
       }
@@ -145,13 +147,16 @@ export default function ImageViewer() {
             <div className="aspect-video relative">
               <AnimatedGradientBorder containerClassName="absolute inset-0">
                 <div className="bg-[#0f0f19] w-full h-full flex items-center justify-center">
-                  <Image 
-                    src={imageInfo.url} 
-                    alt={fileKey} 
-                    className="max-w-full max-h-full object-contain"
-                    width={imageInfo.width || 800}
-                    height={imageInfo.height || 600}
-                  />
+                  <div className="relative max-w-full max-h-full" style={{ height: '100%', width: '100%' }}>
+                    <Image 
+                      src={imageInfo.url} 
+                      alt={fileKey} 
+                      fill
+                      sizes="(max-width: 768px) 100vw, 66vw"
+                      className="object-contain"
+                      unoptimized={true} // For external images
+                    />
+                  </div>
                 </div>
               </AnimatedGradientBorder>
             </div>
@@ -274,18 +279,15 @@ export default function ImageViewer() {
             </div>
             
             {/* Download button */}
-            <div className="flex">
-              <a 
-                href={imageInfo.url} 
-                download={fileKey}
-                className="w-full px-4 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg hover:from-indigo-700 hover:to-purple-700 transition-all flex items-center justify-center"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                </svg>
-                Download Image
-              </a>
-            </div>
+            <a 
+              href={imageInfo.url} 
+              download={fileKey}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block w-full py-3 px-4 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-medium rounded-lg text-center transition-all"
+            >
+              Download Image
+            </a>
           </div>
         </div>
         

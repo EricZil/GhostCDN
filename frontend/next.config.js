@@ -2,19 +2,17 @@
 const nextConfig = {
   reactStrictMode: true,
   images: {
+    domains: ['cdn.ghostcdn.xyz'],
     remotePatterns: [
       {
         protocol: 'https',
-        hostname: process.env.NEXT_PUBLIC_CDN_HOSTNAME || 'localhost',
+        hostname: 'cdn.ghostcdn.xyz',
       },
       {
         protocol: 'http',
-        hostname: process.env.NEXT_PUBLIC_CDN_HOSTNAME || 'localhost',
+        hostname: 'localhost',
       },
     ],
-  },
-  experimental: {
-    serverComponentsExternalPackages: ['sharp'],
   },
 }
 
