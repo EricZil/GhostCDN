@@ -38,12 +38,16 @@ export async function getGuestPresignedUrl(
   };
   
   // Use the secure server-side proxy
-  const response = await fetch('/api/proxy/upload?type=guest&action=presigned', {
+  const response = await fetch('/api/proxy', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify(requestData),
+    body: JSON.stringify({
+      endpoint: 'storage/guest/presigned-url',
+      method: 'POST',
+      body: requestData,
+    }),
   });
   
   if (!response.ok) {
@@ -58,12 +62,14 @@ export async function getGuestPresignedUrl(
  * Get a presigned URL for direct upload as a registered user
  * @param fileInfo Information about the file to upload
  * @param token Authentication token
+ * @param userFolderName User's folder name (UUID)
  * @param options Upload options
  * @returns Promise with the presigned URL result
  */
 export async function getUserPresignedUrl(
   fileInfo: { filename: string; contentType: string; fileSize: number },
   token: string,
+  userFolderName: string,
   options: UploadOptions = {}
 ): Promise<{
   success: boolean;
@@ -79,16 +85,24 @@ export async function getUserPresignedUrl(
   const requestData = {
     ...fileInfo,
     ...options,
-    token,
+    userFolderName,
   };
   
-  // Use the secure server-side proxy
-  const response = await fetch('/api/proxy/upload?type=user&action=presigned', {
+  // Use the secure server-side proxy with Authorization header
+  const response = await fetch('/api/proxy', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
     },
-    body: JSON.stringify(requestData),
+    body: JSON.stringify({
+      endpoint: 'storage/user/presigned-url',
+      method: 'POST',
+      body: requestData,
+      headers: {
+        'Authorization': `Bearer ${token}`,
+      },
+    }),
   });
   
   if (!response.ok) {
@@ -180,12 +194,16 @@ export async function completeGuestUpload(
   };
   
   // Use the secure server-side proxy
-  const response = await fetch('/api/proxy/upload?type=guest&action=complete', {
+  const response = await fetch('/api/proxy', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify(requestData),
+    body: JSON.stringify({
+      endpoint: 'storage/guest/complete',
+      method: 'POST',
+      body: requestData,
+    }),
   });
   
   if (!response.ok) {
@@ -223,17 +241,24 @@ export async function completeUserUpload(
 }> {
   const requestData = {
     fileKey,
-    token,
     ...options,
   };
   
-  // Use the secure server-side proxy
-  const response = await fetch('/api/proxy/upload?type=user&action=complete', {
+  // Use the secure server-side proxy with Authorization header
+  const response = await fetch('/api/proxy', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
     },
-    body: JSON.stringify(requestData),
+    body: JSON.stringify({
+      endpoint: 'storage/user/complete',
+      method: 'POST',
+      body: requestData,
+      headers: {
+        'Authorization': `Bearer ${token}`,
+      },
+    }),
   });
   
   if (!response.ok) {
@@ -252,7 +277,6 @@ export async function checkStorageStatus(): Promise<{
   success: boolean;
   message: string;
   providers: {
-    'cloudflare-r2': string;
     'digitalocean-spaces': string;
   }
 }> {
@@ -266,4 +290,6 @@ export async function checkStorageStatus(): Promise<{
   }
   
   return response.json();
-} 
+}
+
+ 

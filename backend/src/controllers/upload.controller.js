@@ -122,7 +122,7 @@ class UploadController {
         generateThumbnails: req.body.generateThumbnails === 'true' || req.body.generateThumbnails === true, // Handle both string and boolean
       };
       
-      console.log('Complete guest upload options:', options);
+      // Debug: console.log('Complete guest upload options:', options);
       
       const result = await storageService.completeDirectUpload(fileKey, false, options);
       
@@ -161,7 +161,7 @@ class UploadController {
         generateThumbnails: req.body.generateThumbnails === 'true' || req.body.generateThumbnails === true, // Handle both string and boolean
       };
       
-      console.log('Complete user upload options:', options);
+      // Debug: console.log('Complete user upload options:', options);
       
       // Here we would verify the user is authenticated
       // For now, we'll assume the user is authenticated if they hit this endpoint

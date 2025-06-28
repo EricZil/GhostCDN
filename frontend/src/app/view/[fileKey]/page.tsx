@@ -5,11 +5,10 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { PointerHighlight } from "@/components/PointerHighlight";
 import AnimatedGradientBorder from "@/components/ui/AnimatedGradientBorder";
-import Image from 'next/image';
 
 export default function ImageViewer() {
   const params = useParams();
-  const fileKey = params.fileKey as string;
+  const fileKey = decodeURIComponent(params.fileKey as string);
   
   const [copied, setCopied] = useState<string | false>(false);
   const [imageInfo, setImageInfo] = useState<{
@@ -27,6 +26,7 @@ export default function ImageViewer() {
   
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [imageError, setImageError] = useState(false);
 
   useEffect(() => {
     // Fetch image metadata or construct URL from fileKey
@@ -36,13 +36,15 @@ export default function ImageViewer() {
         
         // For now, we'll just construct the URL from the fileKey
         // In the future, you might want to fetch metadata from the server
-        const baseUrl = process.env.NEXT_PUBLIC_CDN_URL;
+        const baseUrl = process.env.NEXT_PUBLIC_CDN_URL || 'https://cdn.ghostcdn.xyz';
         
-        if (!baseUrl) {
-          throw new Error('CDN URL not configured');
-        }
+
         
-        const directUrl = `${baseUrl}/${encodeURIComponent(fileKey)}`;
+        // The fileKey is already decoded, so we need to encode it properly for the URL
+        const encodedFileKey = fileKey.split('/').map(part => encodeURIComponent(part)).join('/');
+        const directUrl = `${baseUrl}/${encodedFileKey}`;
+        
+
         
         // Load the image to get its dimensions
         const img = new window.Image();
@@ -57,15 +59,15 @@ export default function ImageViewer() {
         };
         
         img.onerror = () => {
-          console.error('Failed to load image:', directUrl);
-          setErrorMessage('Failed to load image');
+          // Handle image loading error silently
+          setImageError(true);
           setLoading(false);
         };
         
         img.src = directUrl;
-      } catch (err) {
-        console.error('Error loading image:', err);
-        setErrorMessage(err instanceof Error ? err.message : 'Failed to load image information');
+      } catch {
+        // Handle error silently
+        setImageError(true);
         setLoading(false);
       }
     }
@@ -105,7 +107,7 @@ export default function ImageViewer() {
     );
   }
   
-  if (errorMessage || !imageInfo) {
+  if (imageError || !imageInfo) {
     return (
       <div className="min-h-screen bg-[#0f0f19] flex items-center justify-center">
         <div className="max-w-md p-8 bg-[rgba(20,20,35,0.95)] rounded-xl border border-gray-800/60 shadow-lg">
@@ -147,14 +149,17 @@ export default function ImageViewer() {
             <div className="aspect-video relative">
               <AnimatedGradientBorder containerClassName="absolute inset-0">
                 <div className="bg-[#0f0f19] w-full h-full flex items-center justify-center">
-                  <div className="relative max-w-full max-h-full" style={{ height: '100%', width: '100%' }}>
-                    <Image 
+                  <div className="relative max-w-full max-h-full flex items-center justify-center" style={{ height: '100%', width: '100%' }}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img 
                       src={imageInfo.url} 
                       alt={fileKey} 
-                      fill
-                      sizes="(max-width: 768px) 100vw, 66vw"
-                      className="object-contain"
-                      unoptimized={true} // For external images
+                      className="max-w-full max-h-full object-contain"
+                      style={{ maxHeight: '100%', maxWidth: '100%' }}
+                      onLoad={() => {}}
+                      onError={() => {
+                        setErrorMessage('Failed to load image');
+                      }}
                     />
                   </div>
                 </div>

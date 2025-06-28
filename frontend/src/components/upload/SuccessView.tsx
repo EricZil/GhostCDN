@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from 'react';
 import ThumbnailLinks from './ThumbnailLinks';
 
 interface SuccessViewProps {
@@ -19,12 +20,61 @@ interface SuccessViewProps {
 }
 
 export default function SuccessView({ result, copied, copyToClipboard }: SuccessViewProps) {
+  const [origin, setOrigin] = useState('');
+  const [isMounted, setIsMounted] = useState(false);
+  
+  useEffect(() => {
+    // Set mounted state and origin on client side to avoid hydration mismatch
+    setIsMounted(true);
+    setOrigin(window.location.origin);
+    
+    // Hide scrollbars completely using multiple approaches
+    document.documentElement.style.overflow = 'hidden';
+    document.documentElement.style.scrollbarWidth = 'none'; // Firefox
+    (document.documentElement.style as unknown as Record<string, string>).msOverflowStyle = 'none'; // IE/Edge
+    document.body.style.overflow = 'hidden';
+    
+    // Add CSS to hide webkit scrollbars everywhere
+    const style = document.createElement('style');
+    style.textContent = `
+      html::-webkit-scrollbar,
+      body::-webkit-scrollbar,
+      *::-webkit-scrollbar {
+        display: none !important;
+        width: 0 !important;
+        height: 0 !important;
+      }
+      html, body, * {
+        scrollbar-width: none !important;
+        -ms-overflow-style: none !important;
+      }
+      html, body {
+        overflow: hidden !important;
+      }
+    `;
+    document.head.appendChild(style);
+    
+    // Cleanup on unmount
+    return () => {
+      document.documentElement.style.overflow = 'unset';
+      document.documentElement.style.scrollbarWidth = 'auto';
+      (document.documentElement.style as unknown as Record<string, string>).msOverflowStyle = 'auto';
+      document.body.style.overflow = 'unset';
+      if (document.head.contains(style)) {
+      document.head.removeChild(style);
+      }
+    };
+  }, []);
+
   if (!result.success) return null;
 
+  // Don't render until mounted to prevent hydration mismatch
+  if (!isMounted) return null;
+
   return (
-    <div className="min-h-screen flex items-center justify-center py-16 px-4 pb-24">
-      <div className="w-full max-w-4xl bg-gradient-to-b from-[rgba(20,20,35,0.95)] to-[rgba(15,15,25,0.98)] backdrop-blur-xl rounded-xl border-0 shadow-[0_8px_32px_rgba(0,0,0,0.3),0_0_15px_rgba(124,58,237,0.2)] p-6 md:p-10 transform transition-all duration-500 scale-100 opacity-100">
-        <div className="flex flex-col items-center">
+    <div className="h-screen flex items-center justify-center px-4 overflow-hidden" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+      <div className="w-full max-w-4xl max-h-[90vh] bg-gradient-to-b from-[rgba(20,20,35,0.95)] to-[rgba(15,15,25,0.98)] backdrop-blur-xl rounded-xl border-0 shadow-[0_8px_32px_rgba(0,0,0,0.3),0_0_15px_rgba(124,58,237,0.2)] p-6 md:p-8 transform transition-all duration-500 scale-100 opacity-100 overflow-hidden" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+        <div className="flex flex-col items-center h-full justify-center">
           <div className="mb-6 md:mb-8 relative">
             <div className="absolute inset-0 rounded-full blur-xl bg-gradient-to-r from-green-500/30 via-green-400/30 to-emerald-500/30 animate-pulse"></div>
             <div className="w-20 h-20 md:w-24 md:h-24 rounded-full bg-gradient-to-br from-green-500 to-emerald-400 flex items-center justify-center relative z-10 shadow-[0_0_20px_rgba(16,185,129,0.5)]">
@@ -34,7 +84,7 @@ export default function SuccessView({ result, copied, copyToClipboard }: Success
             </div>
           </div>
           
-          <h3 className="text-2xl md:text-3xl font-medium mb-2 text-white">Upload Complete!</h3>
+          <h3 className="text-2xl md:text-3xl font-medium mb-3 text-white">Upload Complete!</h3>
           <p className="text-base md:text-lg text-gray-300 mb-6 md:mb-8">Your image is now available at the link below</p>
           
           <div className="w-full relative mb-6 md:mb-8 flex flex-col gap-1">
@@ -42,13 +92,13 @@ export default function SuccessView({ result, copied, copyToClipboard }: Success
             <div className="relative flex items-center rounded-xl bg-gradient-to-br from-[rgba(30,30,45,0.7)] to-[rgba(20,20,30,0.95)] border border-gray-800/60 shadow-[0_2px_12px_rgba(124,58,237,0.08)] px-4 py-3">
               <input 
                 type="text" 
-                value={`${window.location.origin}/view/${encodeURIComponent(result.key || '')}`} 
+                value={origin ? `${origin}/view/${encodeURIComponent(result.key || '')}` : ''} 
                 readOnly 
                 className="flex-1 text-xs md:text-sm font-mono text-gray-100 truncate bg-transparent pr-2 border-0 focus:outline-none focus:ring-0 select-all"
               />
               <button 
                 onClick={() => {
-                  const viewerUrl = `${window.location.origin}/view/${encodeURIComponent(result.key || '')}`;
+                  const viewerUrl = `${origin}/view/${encodeURIComponent(result.key || '')}`;
                   copyToClipboard(viewerUrl, 'main');
                 }}
                 className={`ml-2 w-8 h-8 flex items-center justify-center rounded-full border-0 shadow-md transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-accent/40 ${
@@ -82,7 +132,7 @@ export default function SuccessView({ result, copied, copyToClipboard }: Success
           </div>
           
           {result.url && (
-            <div className="w-full mb-6 md:mb-8">
+            <div className="w-full">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {[
                   {

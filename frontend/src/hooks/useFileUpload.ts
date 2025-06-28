@@ -45,7 +45,7 @@ export function useFileUpload() {
   // Use a ref to track if we're currently resetting to prevent infinite loops
   const isResetting = useRef(false);
 
-  const { isAuthenticated, token } = useAuth();
+  const { isAuthenticated, user } = useAuth();
 
   const estimateOptimization = useCallback((file: File): OptimizationEstimate => {
     const originalSize = file.size;
@@ -107,8 +107,22 @@ export function useFileUpload() {
       
       setProgress(5);
       
-      const presignedResponse = isAuthenticated && token 
-        ? await getUserPresignedUrl(fileInfo, token, options)
+      // Get JWT token for authenticated requests
+      let token = null;
+      if (isAuthenticated && user?.r2FolderName) {
+        try {
+          const tokenResponse = await fetch('/api/auth/token');
+          if (tokenResponse.ok) {
+            const tokenData = await tokenResponse.json();
+            token = tokenData.token; // Use the signed JWT token
+          }
+        } catch {
+          // Token fetch failed, will proceed as guest upload
+        }
+      }
+      
+      const presignedResponse = isAuthenticated && user?.r2FolderName && token
+        ? await getUserPresignedUrl(fileInfo, token, user.r2FolderName, options)
         : await getGuestPresignedUrl(fileInfo, options);
       
       if (!presignedResponse.success || !presignedResponse.data) {
@@ -137,7 +151,7 @@ export function useFileUpload() {
         generateThumbnails: options.generateThumbnails,
       };
       
-      const completionResponse = isAuthenticated && token
+      const completionResponse = isAuthenticated && user?.r2FolderName && token
         ? await completeUserUpload(fileKey, token, completionOptions)
         : await completeGuestUpload(fileKey, completionOptions);
       
@@ -166,7 +180,7 @@ export function useFileUpload() {
     } finally {
       setIsUploading(false);
     }
-  }, [isAuthenticated, token]);
+  }, [isAuthenticated, user?.r2FolderName]);
 
   const reset = useCallback(() => {
     // Prevent infinite loops by checking if we're already resetting

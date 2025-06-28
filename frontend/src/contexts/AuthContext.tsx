@@ -1,95 +1,115 @@
 "use client";
 
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-
-interface User {
-  id: string;
-  email: string;
-  name: string;
-}
+import { createContext, useContext, ReactNode, useState } from 'react';
+import { useSession, signIn, signOut, SessionProvider } from 'next-auth/react';
+import { Role, User } from '../types/auth';
 
 interface AuthContextType {
   user: User | null;
-  token: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
-  logout: () => void;
+  register: (name: string, email: string, password: string) => Promise<void>;
+  logout: () => Promise<void>;
+  error: string | null;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [token, setToken] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  return (
+    <SessionProvider>
+      <AuthProviderContent>{children}</AuthProviderContent>
+    </SessionProvider>
+  );
+}
 
-  // Check for existing session on mount
-  useEffect(() => {
-    const storedToken = localStorage.getItem('token');
-    const storedUser = localStorage.getItem('user');
-    
-    if (storedToken && storedUser) {
-      setToken(storedToken);
-      setUser(JSON.parse(storedUser));
-    }
-    
-    setIsLoading(false);
-  }, []);
+function AuthProviderContent({ children }: { children: ReactNode }) {
+  const { data: session, status } = useSession();
+  const isLoading = status === 'loading';
+  const [error, setError] = useState<string | null>(null);
+  
+  // Extract user from session
+  const user = session?.user ? {
+    id: session.user.id,
+    email: session.user.email as string,
+    name: session.user.name as string,
+    role: session.user.role as Role,
+    image: session.user.image,
+    r2FolderName: session.user.r2FolderName,
+  } : null;
 
-  // Login function (to be implemented with actual API)
+  // Login function using NextAuth
   const login = async (email: string, password: string) => {
-    setIsLoading(true);
-    
     try {
-      // In a real implementation, password would be used for authentication
-      // This is just a mock implementation for demonstration
-      if (!email || !password) {
-        throw new Error('Email and password are required');
-      }
-      
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      const mockUser = {
-        id: '1',
+      setError(null);
+      const result = await signIn('credentials', {
+        redirect: false,
         email,
-        name: email.split('@')[0],
-      };
-      
-      const mockToken = 'mock-jwt-token';
-      
-      // Save to state
-      setUser(mockUser);
-      setToken(mockToken);
-      
-      // Save to localStorage
-      localStorage.setItem('token', mockToken);
-      localStorage.setItem('user', JSON.stringify(mockUser));
+        password,
+      });
+
+      if (result?.error) {
+        setError(result.error);
+        throw new Error(result.error);
+      }
     } catch (error) {
-      console.error('Login failed:', error);
+      if (error instanceof Error) {
+        setError(error.message);
+      } else {
+        setError('An unknown error occurred during login');
+      }
       throw error;
-    } finally {
-      setIsLoading(false);
+    }
+  };
+
+  // Register function
+  const register = async (name: string, email: string, password: string) => {
+    try {
+      setError(null);
+      const response = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ name, email, password }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        setError(data.error || 'Registration failed');
+        throw new Error(data.error || 'Registration failed');
+      }
+
+      // Auto login after registration
+      await login(email, password);
+    } catch (error) {
+      if (error instanceof Error) {
+        setError(error.message);
+      } else {
+        setError('An unknown error occurred during registration');
+      }
+      throw error;
     }
   };
 
   // Logout function
-  const logout = () => {
-    setUser(null);
-    setToken(null);
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
+  const logout = async () => {
+    setError(null);
+    await signOut({ redirect: false });
   };
 
   return (
     <AuthContext.Provider
       value={{
         user,
-        token,
         isAuthenticated: !!user,
         isLoading,
         login,
+        register,
         logout,
+        error,
       }}
     >
       {children}

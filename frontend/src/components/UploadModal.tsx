@@ -4,16 +4,19 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useFileUpload } from "@/hooks/useFileUpload";
 import { useUploadAnimation } from "@/hooks/upload/useUploadAnimation";
 import { useClipboard } from "@/hooks/upload/useClipboard";
+import { useSettings } from "@/contexts/SettingsContext";
 import UploadForm from "@/components/upload/UploadForm";
 import SuccessView from "@/components/upload/SuccessView";
+import UploadNotification from "@/components/upload/UploadNotification";
 
 interface UploadModalProps {
   isOpen: boolean;
   onClose: () => void;
   initialFile?: File | null;
+  onOpenAuth?: () => void;
 }
 
-export default function UploadModal({ isOpen, onClose, initialFile = null }: UploadModalProps) {
+export default function UploadModal({ isOpen, onClose, initialFile = null, onOpenAuth }: UploadModalProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
@@ -29,9 +32,21 @@ export default function UploadModal({ isOpen, onClose, initialFile = null }: Upl
     savingsBytes: number;
   } | null>(null);
   const [isClosing, setIsClosing] = useState(false);
+  const [notification, setNotification] = useState<{
+    isVisible: boolean;
+    type: 'error' | 'success' | 'info';
+    title: string;
+    message: string;
+  }>({
+    isVisible: false,
+    type: 'error',
+    title: '',
+    message: ''
+  });
   
   const { copied, copyToClipboard } = useClipboard();
   const animationState = useUploadAnimation(isOpen);
+  const { settings } = useSettings();
   const { 
     uploadFile, 
     isUploading, 
@@ -78,11 +93,38 @@ export default function UploadModal({ isOpen, onClose, initialFile = null }: Upl
     }
     
     if (!newFile.type.startsWith('image/')) {
+      setNotification({
+        isVisible: true,
+        type: 'error',
+        title: 'Invalid File Type',
+        message: 'Please upload an image file (JPEG, PNG, WebP, GIF)'
+      });
       return;
     }
     
-    const maxSize = isAuthenticated ? 100 * 1024 * 1024 : 10 * 1024 * 1024;
+    const guestLimit = (settings?.guestUploadLimit || 10) * 1024 * 1024;
+    const userLimit = (settings?.maxFileSize || 100) * 1024 * 1024;
+    const maxSize = isAuthenticated ? userLimit : guestLimit;
+    
     if (newFile.size > maxSize) {
+      const fileSizeMB = (newFile.size / (1024 * 1024)).toFixed(1);
+      const maxSizeMB = isAuthenticated ? `${settings?.maxFileSize || 100}MB` : `${settings?.guestUploadLimit || 10}MB`;
+      
+      if (!isAuthenticated) {
+        setNotification({
+          isVisible: true,
+          type: 'error',
+          title: 'File Too Large',
+          message: `Your file (${fileSizeMB}MB) exceeds the ${maxSizeMB} limit for guests. Register for unlimited upload sizes!`
+        });
+      } else {
+        setNotification({
+          isVisible: true,
+          type: 'error',
+          title: 'File Too Large',
+          message: `Your file (${fileSizeMB}MB) exceeds the ${maxSizeMB} limit.`
+        });
+      }
       return;
     }
     
@@ -104,13 +146,13 @@ export default function UploadModal({ isOpen, onClose, initialFile = null }: Upl
         try {
           const estimate = estimateOptimization(newFile);
           setOptimizationPreview(estimate);
-        } catch (err) {
-          console.error('Failed to estimate optimization', err);
+        } catch {
+          // Handle estimation error silently
         }
       }
     };
     reader.readAsDataURL(newFile);
-  }, [isAuthenticated, optimizeImage, estimateOptimization]);
+  }, [isAuthenticated, optimizeImage, estimateOptimization, settings?.guestUploadLimit, settings?.maxFileSize]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -188,12 +230,16 @@ export default function UploadModal({ isOpen, onClose, initialFile = null }: Upl
       try {
         const estimate = estimateOptimization(file);
         setOptimizationPreview(estimate);
-      } catch (err) {
-        console.error('Failed to estimate optimization', err);
+      } catch {
+        // Handle estimation error silently
       }
     } else {
       setOptimizationPreview(null);
     }
+  }
+
+  function closeNotification() {
+    setNotification(prev => ({ ...prev, isVisible: false }));
   }
 
   if (!isOpen) return null;
@@ -254,6 +300,17 @@ export default function UploadModal({ isOpen, onClose, initialFile = null }: Upl
             </div>
           )}
         </div>
+        
+        {/* Upload Notification */}
+        <UploadNotification
+          isVisible={notification.isVisible}
+          type={notification.type}
+          title={notification.title}
+          message={notification.message}
+          onClose={closeNotification}
+          onOpenAuth={onOpenAuth}
+          duration={8000}
+        />
       </div>
     </div>
   );

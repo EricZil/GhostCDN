@@ -18,6 +18,9 @@ export function PointerHighlight({
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
 
   useEffect(() => {
+    // Only run on client side to prevent hydration mismatch
+    if (typeof window === 'undefined') return;
+    
     if (containerRef.current) {
       const { width, height } = containerRef.current.getBoundingClientRect();
       setDimensions({ width, height });

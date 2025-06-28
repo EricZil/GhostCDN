@@ -3,18 +3,47 @@
 import { useState, useEffect, useCallback } from "react";
 import Navbar from "@/components/Navbar";
 import UploadModal from "@/components/UploadModal";
+import AuthModal from "@/components/auth/AuthModal";
+import MaintenanceMode from "@/components/MaintenanceMode";
 import { PointerHighlight } from "@/components/PointerHighlight";
+import { useSettings } from "@/contexts/SettingsContext";
+
+interface SystemMessage {
+  id: string;
+  title: string;
+  content: string;
+  type: 'CRITICAL' | 'WARNING' | 'INFO';
+  createdAt: string;
+}
 
 export default function Home() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
   const [initialFile, setInitialFile] = useState<File | null>(null);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [systemMessages, setSystemMessages] = useState<SystemMessage[]>([]);
+  const { settings } = useSettings();
 
   const openModal = () => setIsModalOpen(true);
   const closeModal = () => {
     setIsModalOpen(false);
     setInitialFile(null); // Reset the initial file when modal closes
   };
+
+  const openAuthModal = () => setIsAuthModalOpen(true);
+  const closeAuthModal = () => setIsAuthModalOpen(false);
+
+  // Fetch system messages
+  const fetchSystemMessages = useCallback(async () => {
+    try {
+      const response = await fetch('/api/proxy?endpoint=public/messages');
+      if (response.ok) {
+        const data = await response.json();
+        setSystemMessages(data.messages || []);
+      }
+    } catch {
+    }
+  }, []);
 
   // Handle drag events to open upload modal
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -37,6 +66,9 @@ export default function Home() {
 
   // Handle paste events (Ctrl+V)
   useEffect(() => {
+    // Only add event listeners on client side
+    if (typeof window === 'undefined') return;
+    
     const handlePaste = (e: ClipboardEvent) => {
       if (e.clipboardData && e.clipboardData.files.length > 0) {
         const pastedFile = e.clipboardData.files[0];
@@ -59,7 +91,34 @@ export default function Home() {
 
   useEffect(() => {
     setIsLoaded(true);
-  }, []);
+    fetchSystemMessages();
+  }, [fetchSystemMessages]);
+
+  const getMessageTypeStyles = (type: SystemMessage['type']) => {
+    switch (type) {
+      case 'CRITICAL':
+        return 'bg-red-500/10 border-red-500/30 text-red-400';
+      case 'WARNING':
+        return 'bg-yellow-500/10 border-yellow-500/30 text-yellow-400';
+      case 'INFO':
+        return 'bg-blue-500/10 border-blue-500/30 text-blue-400';
+      default:
+        return 'bg-gray-500/10 border-gray-500/30 text-gray-400';
+    }
+  };
+
+  const getMessageIcon = (type: SystemMessage['type']) => {
+    switch (type) {
+      case 'CRITICAL':
+        return '🔴';
+      case 'WARNING':
+        return '🟡';
+      case 'INFO':
+        return '🔵';
+      default:
+        return 'ℹ️';
+    }
+  };
 
   return (
     <div 
@@ -72,6 +131,34 @@ export default function Home() {
       
       {/* Darker gradient overlay */}
       <div className="dark-gradient-bg"></div>
+      
+      {/* System Messages */}
+      {systemMessages.length > 0 && (
+        <div className="fixed top-20 left-1/2 transform -translate-x-1/2 z-30 w-full max-w-4xl px-4">
+          <div className="space-y-3">
+            {systemMessages.map((message) => (
+              <div
+                key={message.id}
+                className={`p-4 rounded-lg border backdrop-blur-sm ${getMessageTypeStyles(message.type)} transition-all duration-300`}
+              >
+                <div className="flex items-start gap-3">
+                  <span className="text-lg flex-shrink-0 mt-0.5">
+                    {getMessageIcon(message.type)}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-semibold text-sm mb-1">
+                      {message.title}
+                    </h3>
+                    <p className="text-sm opacity-90 leading-relaxed">
+                      {message.content}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       
       {/* Main content - centered logo */}
       <div className="container mx-auto px-4 flex flex-col items-center justify-center min-h-screen py-16 relative z-10">
@@ -98,10 +185,16 @@ export default function Home() {
       </div>
       
       {/* Upload Modal */}
-      <UploadModal isOpen={isModalOpen} onClose={closeModal} initialFile={initialFile} />
+      <UploadModal isOpen={isModalOpen} onClose={closeModal} initialFile={initialFile} onOpenAuth={openAuthModal} />
+      
+      {/* Auth Modal */}
+      <AuthModal isOpen={isAuthModalOpen} onClose={closeAuthModal} />
       
       {/* Navbar */}
-      <Navbar onUploadClick={openModal} />
+      <Navbar onUploadClick={openModal} onOpenAuth={openAuthModal} />
+      
+      {/* Maintenance Mode Overlay */}
+      <MaintenanceMode isActive={settings?.maintenanceMode || false} />
     </div>
   );
 }

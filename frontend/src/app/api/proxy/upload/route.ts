@@ -68,7 +68,7 @@ export async function POST(request: NextRequest) {
       body = JSON.stringify(processedOptions);
       endpoint = `${API_URL}/upload/complete/${uploadType}/${fileKey}`;
       
-      console.log('Sending completion request with options:', processedOptions);
+  
     }
     
     // Forward the request to the backend with the API key
@@ -83,8 +83,7 @@ export async function POST(request: NextRequest) {
     
     // Return the response to the client
     return NextResponse.json(data, { status: response.status });
-  } catch (error) {
-    console.error('Upload proxy error:', error);
+  } catch {
     return NextResponse.json(
       { success: false, message: 'Internal server error' },
       { status: 500 }
