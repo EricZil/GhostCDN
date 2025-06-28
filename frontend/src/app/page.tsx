@@ -7,6 +7,7 @@ import AuthModal from "@/components/auth/AuthModal";
 import MaintenanceMode from "@/components/MaintenanceMode";
 import { PointerHighlight } from "@/components/PointerHighlight";
 import { useSettings } from "@/contexts/SettingsContext";
+import { useSystemMessages } from "@/hooks/useSystemMessages";
 
 interface SystemMessage {
   id: string;
@@ -21,8 +22,10 @@ export default function Home() {
   const [isLoaded, setIsLoaded] = useState(false);
   const [initialFile, setInitialFile] = useState<File | null>(null);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
-  const [systemMessages, setSystemMessages] = useState<SystemMessage[]>([]);
   const { settings } = useSettings();
+  
+  // Use cached system messages
+  const { data: systemMessages = [] } = useSystemMessages();
 
   const openModal = () => setIsModalOpen(true);
   const closeModal = () => {
@@ -33,17 +36,7 @@ export default function Home() {
   const openAuthModal = () => setIsAuthModalOpen(true);
   const closeAuthModal = () => setIsAuthModalOpen(false);
 
-  // Fetch system messages
-  const fetchSystemMessages = useCallback(async () => {
-    try {
-      const response = await fetch('/api/proxy?endpoint=public/messages');
-      if (response.ok) {
-        const data = await response.json();
-        setSystemMessages(data.messages || []);
-      }
-    } catch {
-    }
-  }, []);
+  // System messages are now loaded via React Query hook above
 
   // Handle drag events to open upload modal
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -91,8 +84,8 @@ export default function Home() {
 
   useEffect(() => {
     setIsLoaded(true);
-    fetchSystemMessages();
-  }, [fetchSystemMessages]);
+    // System messages are now loaded automatically via React Query
+  }, []);
 
   const getMessageTypeStyles = (type: SystemMessage['type']) => {
     switch (type) {

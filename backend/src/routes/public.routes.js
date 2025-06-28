@@ -1,13 +1,24 @@
 const express = require('express');
 const cleanupService = require('../services/cleanup.service');
 const prisma = require('../lib/prisma');
+const { cache } = require('../lib/cache');
 
 const router = express.Router();
 
 // Get public system settings (maintenance mode, registration status)
 router.get('/settings', async (req, res) => {
   try {
-    // Get specific public settings
+    // Check cache first
+    const cacheKey = 'public-system-settings';
+    const cachedSettings = cache.get(cacheKey);
+    
+    if (cachedSettings) {
+      console.log('[Cache] Hit for public system settings');
+      return res.json(cachedSettings);
+    }
+
+    // Fetch from database if not cached
+    console.log('[Cache] Miss for public system settings - fetching from DB');
     const publicSettings = await prisma.systemSettings.findMany({
       where: {
         key: {
@@ -35,7 +46,13 @@ router.get('/settings', async (req, res) => {
       maxFileSize: 100
     };
 
-    res.json({ ...defaults, ...settings });
+    const finalSettings = { ...defaults, ...settings };
+
+    // Cache for 5 minutes (300000ms) - settings change less frequently
+    cache.set(cacheKey, finalSettings, 300000);
+    console.log('[Cache] Stored public system settings in cache');
+
+    res.json(finalSettings);
   } catch (error) {
     console.error('Public settings error:', error);
     res.status(500).json({ error: 'Failed to fetch settings' });
@@ -45,6 +62,17 @@ router.get('/settings', async (req, res) => {
 // Get active system messages for main page
 router.get('/messages', async (req, res) => {
   try {
+    // Check cache first
+    const cacheKey = 'public-system-messages';
+    const cachedMessages = cache.get(cacheKey);
+    
+    if (cachedMessages) {
+      console.log('[Cache] Hit for public system messages');
+      return res.json({ messages: cachedMessages });
+    }
+
+    // Fetch from database if not cached
+    console.log('[Cache] Miss for public system messages - fetching from DB');
     const messages = await prisma.systemMessage.findMany({
       where: { isActive: true },
       orderBy: { createdAt: 'desc' },
@@ -56,6 +84,10 @@ router.get('/messages', async (req, res) => {
         createdAt: true
       }
     });
+
+    // Cache for 10 minutes (600000ms)
+    cache.set(cacheKey, messages, 600000);
+    console.log(`[Cache] Stored ${messages.length} system messages in cache`);
 
     res.json({ messages });
   } catch (error) {

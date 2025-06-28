@@ -3,6 +3,7 @@ const prisma = require('../lib/prisma');
 const bcrypt = require('bcrypt');
 const validateApiKey = require('../middleware/apiKey.middleware');
 const cleanupService = require('../services/cleanup.service');
+const { cache } = require('../lib/cache');
 
 const router = express.Router();
 
@@ -34,6 +35,59 @@ const requireAdmin = async (req, res, next) => {
 // Apply middleware to all admin routes
 router.use(validateApiKey);
 router.use(requireAdmin);
+
+// Cache Statistics (for monitoring)
+router.get('/cache/stats', async (req, res) => {
+  try {
+    const stats = cache.getStats();
+    res.json({
+      success: true,
+      cache: stats,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Cache stats error:', error);
+    res.status(500).json({ error: 'Failed to fetch cache statistics' });
+  }
+});
+
+// Clear cache (for debugging)
+router.delete('/cache', async (req, res) => {
+  try {
+    const { key } = req.query;
+    
+    if (key) {
+      // Clear specific cache key
+      const deleted = cache.delete(key);
+      res.json({ 
+        success: true, 
+        message: deleted ? `Cache key '${key}' cleared` : `Cache key '${key}' not found`,
+        deleted
+      });
+    } else {
+      // Clear all cache
+      cache.clear();
+      res.json({ 
+        success: true, 
+        message: 'All cache cleared'
+      });
+    }
+
+    // Log admin activity
+    await prisma.activity.create({
+      data: {
+        userId: req.user.id,
+        type: 'SETTINGS_CHANGED',
+        message: key ? `Admin cleared cache key: ${key}` : 'Admin cleared all cache',
+        metadata: { cacheKey: key || 'all' },
+        isAdminActivity: true
+      }
+    });
+  } catch (error) {
+    console.error('Cache clear error:', error);
+    res.status(500).json({ error: 'Failed to clear cache' });
+  }
+});
 
 // System Overview Stats
 router.get('/overview', async (req, res) => {
@@ -585,6 +639,10 @@ router.put('/settings', async (req, res) => {
       activityMessage = `Admin updated ${changedSettings[0]}`;
     }
     
+    // Invalidate public system settings cache
+    cache.delete('public-system-settings');
+    console.log('[Cache] Invalidated public system settings cache after update');
+
     await prisma.activity.create({
       data: {
         userId: req.user.id,
@@ -864,6 +922,10 @@ router.post('/messages', async (req, res) => {
       }
     });
 
+    // Invalidate public system messages cache
+    cache.delete('public-system-messages');
+    console.log('[Cache] Invalidated public system messages cache after creation');
+
     // Log admin activity
     await prisma.activity.create({
       data: {
@@ -903,6 +965,10 @@ router.put('/messages/:messageId', async (req, res) => {
       }
     });
 
+    // Invalidate public system messages cache
+    cache.delete('public-system-messages');
+    console.log('[Cache] Invalidated public system messages cache after update');
+
     // Log admin activity
     const action = isActive !== undefined ? 
       (isActive ? 'activated' : 'deactivated') : 'updated';
@@ -939,6 +1005,10 @@ router.delete('/messages/:messageId', async (req, res) => {
     await prisma.systemMessage.delete({
       where: { id: messageId }
     });
+
+    // Invalidate public system messages cache
+    cache.delete('public-system-messages');
+    console.log('[Cache] Invalidated public system messages cache after deletion');
 
     // Log admin activity
     await prisma.activity.create({

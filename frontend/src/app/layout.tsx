@@ -4,6 +4,7 @@ import "./globals.css";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { NotificationProvider } from "@/contexts/NotificationContext";
 import { SettingsProvider } from "@/contexts/SettingsContext";
+import QueryProvider from "@/components/QueryProvider";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -32,13 +33,15 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
         suppressHydrationWarning
       >
-        <SettingsProvider>
-        <AuthProvider>
-            <NotificationProvider>
-          {children}
-            </NotificationProvider>
-        </AuthProvider>
-        </SettingsProvider>
+        <QueryProvider>
+          <SettingsProvider>
+            <AuthProvider>
+              <NotificationProvider>
+                {children}
+              </NotificationProvider>
+            </AuthProvider>
+          </SettingsProvider>
+        </QueryProvider>
       </body>
     </html>
   );
