@@ -156,21 +156,25 @@ class StorageService {
           case '.jpg':
           case '.jpeg':
             outputOptions = { 
-              quality: 80,
-              mozjpeg: true
+              quality: 82,
+              progressive: true,
+              mozjpeg: true,
+              optimiseScans: true
             };
             break;
           case '.png':
             outputOptions = { 
-              quality: 75,
-              compressionLevel: 9,
-              palette: true
+              quality: 80,
+              compressionLevel: 6, // Balanced speed vs compression (was 9)
+              palette: false, // Faster than palette optimization
+              effort: 7 // Balanced effort level
             };
             break;
           case '.webp':
             outputOptions = { 
-              quality: 80,
-              effort: 6
+              quality: 82,
+              effort: 4, // Faster than 6, still good quality
+              lossless: false
             };
             break;
           case '.gif':
@@ -178,7 +182,7 @@ class StorageService {
             break;
           default:
             // Use default settings for other formats
-            outputOptions = { quality: 80 };
+            outputOptions = { quality: 82 };
         }
         
         // If preserveExif is false, strip metadata
@@ -243,8 +247,8 @@ class StorageService {
       const thumbnailUrls = {};
       const image = sharp(imageBuffer);
       
-      // Generate thumbnails for each size
-      for (const [size, dimensions] of Object.entries(THUMBNAIL_SIZES)) {
+      // Generate thumbnails for each size in parallel
+      const thumbnailPromises = Object.entries(THUMBNAIL_SIZES).map(async ([size, dimensions]) => {
         try {
           // Create thumbnail key
           const thumbnailKey = `${thumbnailBasePath}${baseName}_${size}${thumbnailExtension}`;
@@ -256,9 +260,14 @@ class StorageService {
               width: dimensions.width,
               height: dimensions.height,
               fit: 'inside',
-              withoutEnlargement: true
+              withoutEnlargement: true,
+              kernel: 'lanczos3' // Better quality for thumbnails
             })
-            .webp({ quality: 80 })
+            .webp({ 
+              quality: 85, // Slightly higher quality for thumbnails
+              effort: 3,   // Faster processing
+              smartSubsample: true
+            })
             .toBuffer();
                 
           // Upload thumbnail
@@ -276,11 +285,23 @@ class StorageService {
           const encodedThumbnailKey = encodeURIComponent(thumbnailKey);
           
           // Generate public URL for the thumbnail
-          thumbnailUrls[size] = `${process.env.DO_SPACES_PUBLIC_URL}/${encodedThumbnailKey}`;
+          const thumbnailUrl = `${process.env.DO_SPACES_PUBLIC_URL}/${encodedThumbnailKey}`;
           
           console.log(`Generated ${size} thumbnail for ${fileKey}`);
+          return { size, url: thumbnailUrl };
         } catch (err) {
           console.error(`Error generating ${size} thumbnail:`, err);
+          return null;
+        }
+      });
+
+      // Wait for all thumbnails to complete
+      const thumbnailResults = await Promise.all(thumbnailPromises);
+      
+      // Build thumbnailUrls object from successful results
+      for (const result of thumbnailResults) {
+        if (result) {
+          thumbnailUrls[result.size] = result.url;
         }
       }
       
@@ -320,7 +341,7 @@ class StorageService {
       // Get processing options from metadata or use provided options
       const metadata = fileMetadata.Metadata || {};
       const processingOptions = {
-        optimize: metadata['optimize'] === 'true' || options.optimize === true,
+        optimize: (metadata['optimize'] === 'true' || options.optimize === true) && !options.skipOptimization,
         preserveExif: metadata['preserve-exif'] === 'true' || options.preserveExif === true,
         generateThumbnails: metadata['generate-thumbnails'] === 'true' || options.generateThumbnails === true,
       };
@@ -344,32 +365,57 @@ class StorageService {
       let processedFileKey = fileKey;
       let thumbnails = null;
       
-      // Process image if optimization is enabled
-      if (isImage && imageBuffer && processingOptions.optimize) {
-        try {
-          const processedBuffer = await this.processImage(imageBuffer, fileKey, processingOptions);
-          
-          // Re-upload the processed image
-          const putCommand = new PutObjectCommand({
-            Bucket: bucketName,
-            Key: fileKey,
-            Body: processedBuffer,
-            ContentType: fileMetadata.ContentType,
-            ACL: 'public-read',
-            Metadata: metadata,
-          });
-          
-          await doSpacesClient.send(putCommand);
-          console.log(`Optimized image: ${fileKey}`);
-        } catch (error) {
-          console.error('Error optimizing image:', error);
-          // Continue without optimization
+      // Process image optimization and thumbnails in parallel
+      if (isImage && imageBuffer) {
+        const tasks = [];
+        
+        // Add optimization task
+        if (processingOptions.optimize) {
+          tasks.push(
+            this.processImage(imageBuffer, fileKey, processingOptions)
+              .then(async (processedBuffer) => {
+                const putCommand = new PutObjectCommand({
+                  Bucket: bucketName,
+                  Key: fileKey,
+                  Body: processedBuffer,
+                  ContentType: fileMetadata.ContentType,
+                  ACL: 'public-read',
+                  Metadata: metadata,
+                });
+                
+                await doSpacesClient.send(putCommand);
+                console.log(`Optimized image: ${fileKey}`);
+                return { type: 'optimization', success: true };
+              })
+              .catch((error) => {
+                console.error('Error optimizing image:', error);
+                return { type: 'optimization', success: false, error };
+              })
+          );
         }
-      }
-      
-      // Generate thumbnails if requested
-      if (isImage && imageBuffer && processingOptions.generateThumbnails) {
-        thumbnails = await this.generateThumbnails(imageBuffer, fileKey);
+        
+        // Add thumbnail generation task
+        if (processingOptions.generateThumbnails) {
+          tasks.push(
+            this.generateThumbnails(imageBuffer, fileKey)
+              .then((result) => ({ type: 'thumbnails', success: true, data: result }))
+              .catch((error) => {
+                console.error('Error generating thumbnails:', error);
+                return { type: 'thumbnails', success: false, error };
+              })
+          );
+        }
+        
+        // Execute all tasks in parallel
+        if (tasks.length > 0) {
+          const results = await Promise.all(tasks);
+          
+          // Extract thumbnail results
+          const thumbnailResult = results.find(r => r.type === 'thumbnails');
+          if (thumbnailResult && thumbnailResult.success) {
+            thumbnails = thumbnailResult.data;
+          }
+        }
       }
       
       // Generate final URLs

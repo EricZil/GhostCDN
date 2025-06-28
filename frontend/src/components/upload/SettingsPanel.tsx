@@ -131,7 +131,7 @@ export default function SettingsPanel({
         <div className="flex items-center justify-between mb-3">
           <div>
             <div className="text-white font-medium">Optimize</div>
-            <div className="text-gray-400 text-xs">High-quality lossless compression</div>
+            <div className="text-gray-400 text-xs">Smart client + server compression</div>
           </div>
           <label className="relative inline-flex items-center cursor-pointer">
             <input 

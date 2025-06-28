@@ -10,6 +10,7 @@ export interface UploadOptions {
   optimize?: boolean;
   preserveExif?: boolean;
   generateThumbnails?: boolean;
+  skipOptimization?: boolean;
 }
 
 /**
@@ -173,7 +174,7 @@ export async function uploadFileWithPresignedUrl(
  */
 export async function completeGuestUpload(
   fileKey: string,
-  options: { generateThumbnails?: boolean } = {}
+  options: { generateThumbnails?: boolean; skipOptimization?: boolean } = {}
 ): Promise<{
   success: boolean;
   message: string;
@@ -224,7 +225,7 @@ export async function completeGuestUpload(
 export async function completeUserUpload(
   fileKey: string,
   token: string,
-  options: { generateThumbnails?: boolean } = {}
+  options: { generateThumbnails?: boolean; skipOptimization?: boolean } = {}
 ): Promise<{
   success: boolean;
   message: string;

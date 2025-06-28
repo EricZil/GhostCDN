@@ -10,6 +10,7 @@ import {
   UploadOptions 
 } from '@/utils/api';
 import { useAuth } from '@/contexts/AuthContext';
+import { optimizeImageFile } from '@/utils/imageOptimizer';
 
 interface UploadResult {
   success: boolean;
@@ -98,11 +99,30 @@ export function useFileUpload() {
     setError(null);
     
     try {
+      let fileToUpload = file;
+      let clientOptimized = false;
+      
+      // Step 0: Client-side optimization (if enabled and beneficial)
+      if (options.optimize && file.type.startsWith('image/') && typeof window !== 'undefined') {
+        setProgress(2);
+        try {
+          const optimizationResult = await optimizeImageFile(file);
+          if (optimizationResult) {
+            fileToUpload = optimizationResult.optimizedFile;
+            clientOptimized = true;
+            console.log(`Client-side optimization: ${file.size} → ${fileToUpload.size} bytes (${Math.round((1 - optimizationResult.stats.compressionRatio) * 100)}% reduction)`);
+          }
+        } catch (error) {
+          console.warn('Client-side optimization failed, falling back to server optimization:', error);
+          // Continue with original file and let server handle optimization
+        }
+      }
+      
       // Step 1: Get presigned URL
       const fileInfo = {
         filename: options.filename || file.name,
-        contentType: file.type,
-        fileSize: file.size,
+        contentType: fileToUpload.type,
+        fileSize: fileToUpload.size,
       };
       
       setProgress(5);
@@ -135,7 +155,7 @@ export function useFileUpload() {
       
       // Step 2: Upload file directly to storage
       await uploadFileWithPresignedUrl(
-        file,
+        fileToUpload,
         presignedUrl,
         contentType,
         (uploadProgress) => {
@@ -149,6 +169,8 @@ export function useFileUpload() {
       // Step 3: Complete the upload (notify backend)
       const completionOptions = {
         generateThumbnails: options.generateThumbnails,
+        // Reduce server-side optimization if client already optimized
+        skipOptimization: clientOptimized,
       };
       
       const completionResponse = isAuthenticated && user?.r2FolderName && token
