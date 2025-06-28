@@ -3,10 +3,12 @@
   "version": "1.0.0",
   "main": "src/index.js",
   "scripts": {
+    "build": "prisma generate && echo 'Prisma Client generated successfully'",
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
     "generate-api-key": "node scripts/generate-api-key.js",
-    "test": "jest"
+    "test": "jest",
+    "postinstall": "prisma generate"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.450.0",
