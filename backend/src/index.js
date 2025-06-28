@@ -20,6 +20,15 @@ const validateApiKey = require('./middleware/apiKey.middleware');
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+// Trust proxy headers when deployed on Vercel or other reverse proxies
+// This is required for express-rate-limit to work correctly with X-Forwarded-For headers
+if (process.env.NODE_ENV === 'production' || process.env.VERCEL) {
+  app.set('trust proxy', true);
+} else {
+  // In development, only trust localhost proxies
+  app.set('trust proxy', 'loopback');
+}
+
 // Security middleware (order matters!)
 app.use(securityHeaders);
 app.use(additionalSecurity);
