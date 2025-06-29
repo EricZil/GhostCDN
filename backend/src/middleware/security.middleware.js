@@ -75,7 +75,7 @@ const securityHeaders = helmet({
   noSniff: true,
   originAgentCluster: true,
   permittedCrossDomainPolicies: false,
-  referrerPolicy: { policy: "strict-origin-when-cross-origin" },
+  referrerPolicy: { policy: "origin-when-cross-origin" },
   xssFilter: true
 });
 
@@ -119,6 +119,8 @@ const fileUploadSecurity = (req, res, next) => {
     // Add file-specific security headers
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('X-Frame-Options', 'DENY');
+    // Use more permissive referrer policy for file uploads to DigitalOcean Spaces
+    res.setHeader('Referrer-Policy', 'origin');
   }
   
   next();
