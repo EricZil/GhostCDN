@@ -3,6 +3,13 @@
 import { createContext, useContext, ReactNode, useState } from 'react';
 import { useSession, signIn, signOut, SessionProvider } from 'next-auth/react';
 import { Role, User } from '../types/auth';
+import BanNotificationModal from '@/components/auth/BanNotificationModal';
+
+interface BanInfo {
+  banType: string;
+  reason: string;
+  bannedAt: string;
+}
 
 interface AuthContextType {
   user: User | null;
@@ -12,6 +19,7 @@ interface AuthContextType {
   register: (name: string, email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   error: string | null;
+  checkBanStatus: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -28,6 +36,8 @@ function AuthProviderContent({ children }: { children: ReactNode }) {
   const { data: session, status } = useSession();
   const isLoading = status === 'loading';
   const [error, setError] = useState<string | null>(null);
+  const [showBanModal, setShowBanModal] = useState(false);
+  const [banInfo, setBanInfo] = useState<BanInfo | null>(null);
   
   // Extract user from session
   const user = session?.user ? {
@@ -37,7 +47,36 @@ function AuthProviderContent({ children }: { children: ReactNode }) {
     role: session.user.role as Role,
     image: session.user.image,
     r2FolderName: session.user.r2FolderName,
+    lastLogin: session.user.lastLogin,
   } : null;
+
+  // Check ban status for authenticated users (only when called manually)
+  const checkBanStatus = async () => {
+    if (!user) return;
+
+    try {
+      const response = await fetch('/api/auth/check-ban', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          userId: user.id,
+          email: user.email
+        })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && data.banned) {
+          setBanInfo(data.banInfo);
+          setShowBanModal(true);
+        }
+      }
+    } catch {
+      // Continue on error to avoid breaking the app
+    }
+  };
 
   // Login function using NextAuth
   const login = async (email: string, password: string) => {
@@ -50,7 +89,12 @@ function AuthProviderContent({ children }: { children: ReactNode }) {
       });
 
       if (result?.error) {
-        setError(result.error);
+        // Handle ban-specific errors
+        if (result.error.includes('Account Banned')) {
+          setError('Your account has been suspended. Please contact support for assistance.');
+        } else {
+          setError(result.error);
+        }
         throw new Error(result.error);
       }
     } catch (error) {
@@ -82,8 +126,7 @@ function AuthProviderContent({ children }: { children: ReactNode }) {
         throw new Error(data.error || 'Registration failed');
       }
 
-      // Auto login after registration
-      await login(email, password);
+      // User needs to verify email before signing in
     } catch (error) {
       if (error instanceof Error) {
         setError(error.message);
@@ -97,7 +140,14 @@ function AuthProviderContent({ children }: { children: ReactNode }) {
   // Logout function
   const logout = async () => {
     setError(null);
+    setShowBanModal(false);
+    setBanInfo(null);
     await signOut({ redirect: false });
+  };
+
+  const handleCloseBanModal = () => {
+    setShowBanModal(false);
+    setBanInfo(null);
   };
 
   return (
@@ -110,9 +160,19 @@ function AuthProviderContent({ children }: { children: ReactNode }) {
         register,
         logout,
         error,
+        checkBanStatus,
       }}
     >
       {children}
+      
+      {/* Ban Notification Modal */}
+      {banInfo && (
+        <BanNotificationModal
+          isOpen={showBanModal}
+          banInfo={banInfo}
+          onClose={handleCloseBanModal}
+        />
+      )}
     </AuthContext.Provider>
   );
 }

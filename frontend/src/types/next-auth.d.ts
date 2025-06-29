@@ -6,6 +6,7 @@ declare module "next-auth" {
     id: string;
     role: Role;
     r2FolderName?: string;
+    lastLogin?: string | null;
   }
 
   interface Session {
@@ -16,6 +17,7 @@ declare module "next-auth" {
       image?: string;
       role: Role;
       r2FolderName?: string;
+      lastLogin?: string | null;
     };
   }
 }
@@ -25,5 +27,6 @@ declare module "next-auth/jwt" {
     id: string;
     role: Role;
     r2FolderName?: string;
+    lastLogin?: string | null;
   }
 } 

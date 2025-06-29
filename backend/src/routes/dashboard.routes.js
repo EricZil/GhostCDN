@@ -1,6 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const prisma = require('../lib/prisma');
+const { checkAllBans } = require('../middleware/ban.middleware');
+
+// Apply ban checking to all dashboard routes
+router.use(checkAllBans);
 
 // Get dashboard overview stats
 router.get('/overview/:userEmail', async (req, res) => {
@@ -142,8 +146,7 @@ router.get('/uploads/:userEmail', async (req, res) => {
     // Add search query
     if (query) {
       where.fileName = {
-        contains: query,
-        mode: 'insensitive'
+        contains: query
       };
     }
     

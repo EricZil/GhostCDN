@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { signIn } from 'next-auth/react';
+import EmailVerificationModal from './EmailVerificationModal';
 
 export default function LoginForm() {
   const [email, setEmail] = useState('');
@@ -10,151 +11,198 @@ export default function LoginForm() {
   const [rememberMe, setRememberMe] = useState(false);
   const { login, isLoading } = useAuth();
   const [localError, setLocalError] = useState('');
+  const [showVerificationModal, setShowVerificationModal] = useState(false);
+  const [isBanned, setIsBanned] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setLocalError('');
+    setShowVerificationModal(false);
+    setIsBanned(false);
     
     try {
       await login(email, password);
       // Success is handled by the AuthContext which updates the session
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      if (errorMessage.includes('verify your email')) {
+        setShowVerificationModal(true);
+      } else if (errorMessage.includes('Account Banned')) {
+        setIsBanned(true);
+        setLocalError('Your account has been suspended. Please contact support for assistance.');
+      } else {
+        setLocalError('Login failed. Please check your credentials and try again.');
+      }
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    setLocalError('');
+    setIsBanned(false);
+    try {
+      await signIn('google', { redirect: false });
     } catch {
-      setLocalError('Login failed. Please try again.');
-    } finally {
+      setLocalError('Google login failed. Please try again.');
+    }
+  };
+
+  const handleGitHubLogin = async () => {
+    setLocalError('');
+    setIsBanned(false);
+    try {
+      await signIn('github', { redirect: false });
+    } catch {
+      setLocalError('GitHub login failed. Please try again.');
     }
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-5">
-      <div>
-        <label htmlFor="email" className="block text-sm font-medium text-gray-300 mb-1">
-          Email Address
-        </label>
-        <input
-          id="email"
-          name="email"
-          type="email"
-          required
-          className="w-full px-4 py-3 bg-black/50 border border-gray-800 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent text-white placeholder-gray-500"
-          placeholder="you@example.com"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-        />
-      </div>
-
-      <div>
-        <label htmlFor="password" className="block text-sm font-medium text-gray-300 mb-1">
-          Password
-        </label>
-        <input
-          id="password"
-          name="password"
-          type="password"
-          required
-          className="w-full px-4 py-3 bg-black/50 border border-gray-800 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent text-white placeholder-gray-500"
-          placeholder="••••••••"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-        />
-      </div>
-
-      {localError && (
-        <div className="text-red-500 text-sm py-2 px-3 bg-red-500/10 border border-red-500/20 rounded">
-          {localError}
+    <>
+      <form onSubmit={handleSubmit} className="space-y-6">
+        <div>
+          <label htmlFor="email" className="block text-sm font-medium text-gray-300 mb-2">
+            Email Address
+          </label>
+          <input
+            id="email"
+            name="email"
+            type="email"
+            autoComplete="email"
+            required
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className="w-full px-4 py-3 bg-black/50 border border-gray-700 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-200"
+            placeholder="Enter your email"
+          />
         </div>
-      )}
 
-      <div className="flex items-center justify-between">
-        <div className="flex items-center">
-          <div className="relative flex items-center">
+        <div>
+          <label htmlFor="password" className="block text-sm font-medium text-gray-300 mb-2">
+            Password
+          </label>
+          <input
+            id="password"
+            name="password"
+            type="password"
+            autoComplete="current-password"
+            required
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            className="w-full px-4 py-3 bg-black/50 border border-gray-700 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-200"
+            placeholder="Enter your password"
+          />
+        </div>
+
+        <div className="flex items-center justify-between">
+          <div className="flex items-center">
             <input
               id="remember-me"
               name="remember-me"
               type="checkbox"
-              className="sr-only"
               checked={rememberMe}
-              onChange={() => setRememberMe(!rememberMe)}
+              onChange={(e) => setRememberMe(e.target.checked)}
+              className="h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-300 rounded bg-black/50"
             />
-            <div 
-              className={`w-5 h-5 rounded border ${
-                rememberMe 
-                  ? 'bg-purple-600 border-purple-600' 
-                  : 'bg-black/50 border-gray-700'
-              } flex items-center justify-center transition-colors duration-200`}
-              onClick={() => setRememberMe(!rememberMe)}
-            >
-              {rememberMe && (
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 text-white" viewBox="0 0 20 20" fill="currentColor">
-                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                </svg>
-              )}
-            </div>
-            <label htmlFor="remember-me" className="ml-2 block text-sm text-gray-400 cursor-pointer">
+            <label htmlFor="remember-me" className="ml-2 block text-sm text-gray-300">
               Remember me
             </label>
           </div>
+
+          <div className="text-sm">
+            <a href="#" className="font-medium text-purple-400 hover:text-purple-300 transition-colors">
+              Forgot your password?
+            </a>
+          </div>
         </div>
 
-        <div className="text-sm">
-          <a href="#" className="font-medium text-purple-400 hover:text-purple-300">
-            Forgot password?
-          </a>
-        </div>
-      </div>
+        {localError && (
+          <div className={`p-4 rounded-lg border ${
+            isBanned 
+              ? 'bg-red-500/10 border-red-500/30 text-red-400' 
+              : 'bg-red-500/10 border-red-500/30 text-red-400'
+          }`}>
+            <div className="flex items-center gap-2">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                {isBanned ? (
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                ) : (
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                )}
+              </svg>
+              <span className="text-sm font-medium">
+                {isBanned ? 'Account Suspended' : 'Login Failed'}
+              </span>
+            </div>
+            <p className="text-sm mt-1">{localError}</p>
+            {isBanned && (
+              <p className="text-xs mt-2 text-gray-400">
+                If you believe this is a mistake, please contact our support team.
+              </p>
+            )}
+          </div>
+        )}
 
-      <div>
         <button
           type="submit"
           disabled={isLoading}
-          className="w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          className="w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
         >
           {isLoading ? (
-            <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-            </svg>
-          ) : "Sign In"}
+            <div className="flex items-center">
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+              Signing in...
+            </div>
+          ) : (
+            'Sign in'
+          )}
         </button>
-      </div>
 
-      <div className="mt-6">
-        <div className="relative">
-          <div className="absolute inset-0 flex items-center">
-            <div className="w-full border-t border-gray-800"></div>
+        <div className="mt-6">
+          <div className="relative">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-gray-700" />
+            </div>
+            <div className="relative flex justify-center text-sm">
+              <span className="px-2 bg-gray-900 text-gray-400">Or continue with</span>
+            </div>
           </div>
-          <div className="relative flex justify-center text-sm">
-            <span className="px-2 bg-black text-gray-400">Or continue with</span>
-          </div>
-        </div>
 
-        <div className="mt-6 grid grid-cols-2 gap-3">
-          <div>
+          <div className="mt-6 grid grid-cols-2 gap-3">
             <button
               type="button"
-              onClick={() => signIn('google', { callbackUrl: '/' })}
-              className="w-full inline-flex justify-center py-2 px-4 border border-gray-800 rounded-lg shadow-sm bg-black/50 text-sm font-medium text-gray-300 hover:bg-gray-900"
+              onClick={handleGoogleLogin}
+              className="w-full inline-flex justify-center py-2 px-4 border border-gray-700 rounded-lg shadow-sm bg-black/50 text-sm font-medium text-gray-300 hover:bg-gray-800 transition-colors"
             >
-              <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M22.56 12.25C22.56 11.47 22.49 10.72 22.36 10H12V14.26H17.92C17.66 15.63 16.88 16.79 15.71 17.57V20.34H19.28C21.36 18.42 22.56 15.6 22.56 12.25Z" fill="#4285F4"/>
-                <path d="M12 23C14.97 23 17.46 22 19.28 20.34L15.71 17.57C14.73 18.23 13.48 18.63 12 18.63C9.13 18.63 6.72 16.74 5.82 14.15H2.14V17.01C3.94 20.57 7.65 23 12 23Z" fill="#34A853"/>
-                <path d="M5.82 14.15C5.6 13.52 5.48 12.84 5.48 12.15C5.48 11.46 5.6 10.78 5.82 10.15V7.29H2.14C1.41 8.7 1 10.37 1 12.15C1 13.93 1.41 15.6 2.14 17.01L5.82 14.15Z" fill="#FBBC05"/>
-                <path d="M12 5.67C13.62 5.67 15.06 6.22 16.19 7.29L19.36 4.12C17.46 2.39 14.97 1.33 12 1.33C7.65 1.33 3.94 3.76 2.14 7.32L5.82 10.18C6.72 7.59 9.13 5.67 12 5.67Z" fill="#EA4335"/>
+              <svg className="w-5 h-5" viewBox="0 0 24 24">
+                <path fill="currentColor" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                <path fill="currentColor" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                <path fill="currentColor" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                <path fill="currentColor" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
               </svg>
+              <span className="ml-2">Google</span>
             </button>
-          </div>
 
-          <div>
             <button
               type="button"
-              onClick={() => signIn('github', { callbackUrl: '/' })}
-              className="w-full inline-flex justify-center py-2 px-4 border border-gray-800 rounded-lg shadow-sm bg-black/50 text-sm font-medium text-gray-300 hover:bg-gray-900"
+              onClick={handleGitHubLogin}
+              className="w-full inline-flex justify-center py-2 px-4 border border-gray-700 rounded-lg shadow-sm bg-black/50 text-sm font-medium text-gray-300 hover:bg-gray-800 transition-colors"
             >
-              <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M12 0C5.373 0 0 5.373 0 12C0 17.303 3.438 21.8 8.205 23.385C8.805 23.498 9.025 23.127 9.025 22.81C9.025 22.523 9.015 21.768 9.01 20.768C5.672 21.492 4.968 19.158 4.968 19.158C4.422 17.773 3.633 17.403 3.633 17.403C2.546 16.659 3.717 16.675 3.717 16.675C4.922 16.759 5.555 17.912 5.555 17.912C6.625 19.746 8.364 19.216 9.05 18.909C9.158 18.132 9.467 17.603 9.81 17.303C7.145 17 4.343 15.971 4.343 11.374C4.343 10.063 4.812 8.993 5.579 8.153C5.455 7.85 5.044 6.629 5.696 4.977C5.696 4.977 6.704 4.655 8.997 6.207C9.954 5.941 10.98 5.808 12 5.803C13.02 5.808 14.047 5.941 15.006 6.207C17.297 4.655 18.303 4.977 18.303 4.977C18.956 6.63 18.545 7.851 18.421 8.153C19.191 8.993 19.656 10.064 19.656 11.374C19.656 15.983 16.849 16.998 14.177 17.295C14.607 17.667 15 18.397 15 19.517C15 21.12 14.985 22.41 14.985 22.81C14.985 23.129 15.204 23.504 15.815 23.385C20.565 21.797 24 17.3 24 12C24 5.373 18.627 0 12 0Z" fill="currentColor"/>
+              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
               </svg>
+              <span className="ml-2">GitHub</span>
             </button>
           </div>
         </div>
-      </div>
-    </form>
+      </form>
+
+      {showVerificationModal && (
+        <EmailVerificationModal
+          isOpen={showVerificationModal}
+          onClose={() => setShowVerificationModal(false)}
+          email={email}
+        />
+      )}
+    </>
   );
 } 

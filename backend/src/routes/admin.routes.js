@@ -1,53 +1,72 @@
 const express = require('express');
 const prisma = require('../lib/prisma');
 const bcrypt = require('bcrypt');
-const validateApiKey = require('../middleware/apiKey.middleware');
+const { validateApiKey, requireAdmin } = require('../middleware/apiKey.middleware');
 const cleanupService = require('../services/cleanup.service');
-const { cache } = require('../lib/cache');
+const { cache } = require('../lib/cache-manager');
+const { checkAllBans } = require('../middleware/ban.middleware');
+const { validateNextAuthJWT } = require('../middleware/jwt.middleware');
 
 const router = express.Router();
-
-
-// Middleware to check if user is admin
-const requireAdmin = async (req, res, next) => {
-  try {
-    const userEmail = req.headers['user-email'];
-    if (!userEmail) {
-      return res.status(401).json({ error: 'User email required' });
-    }
-
-    const user = await prisma.user.findUnique({
-      where: { email: userEmail }
-    });
-
-    if (!user || user.role !== 'ADMIN') {
-      return res.status(403).json({ error: 'Admin access required' });
-    }
-
-    req.user = user;
-    next();
-  } catch (error) {
-    console.error('Admin auth error:', error);
-    res.status(500).json({ error: 'Authentication failed' });
-  }
-};
 
 // Apply middleware to all admin routes
 router.use(validateApiKey);
 router.use(requireAdmin);
+router.use(checkAllBans);
 
 // Cache Statistics (for monitoring)
 router.get('/cache/stats', async (req, res) => {
   try {
-    const stats = cache.getStats();
+    const stats = await cache.getStats();
+    const ping = await cache.ping();
+    
     res.json({
       success: true,
-      cache: stats,
+      cache: {
+        ...stats,
+        ping: ping,
+        redisHealthy: ping
+      },
       timestamp: new Date().toISOString()
     });
   } catch (error) {
     console.error('Cache stats error:', error);
     res.status(500).json({ error: 'Failed to fetch cache statistics' });
+  }
+});
+
+// Cache Key Information (Redis-specific)
+router.get('/cache/keys', async (req, res) => {
+  try {
+    const { pattern = '*' } = req.query;
+    const keys = await cache.listKeys(pattern);
+    
+    res.json({
+      success: true,
+      keys,
+      count: keys.length,
+      pattern
+    });
+  } catch (error) {
+    console.error('Cache keys error:', error);
+    res.status(500).json({ error: 'Failed to fetch cache keys' });
+  }
+});
+
+// Cache Key Details (Redis-specific)
+router.get('/cache/keys/:key', async (req, res) => {
+  try {
+    const { key } = req.params;
+    const keyInfo = await cache.getKeyInfo(key);
+    
+    res.json({
+      success: true,
+      key,
+      info: keyInfo
+    });
+  } catch (error) {
+    console.error('Cache key info error:', error);
+    res.status(500).json({ error: 'Failed to fetch key information' });
   }
 });
 
@@ -58,7 +77,7 @@ router.delete('/cache', async (req, res) => {
     
     if (key) {
       // Clear specific cache key
-      const deleted = cache.delete(key);
+      const deleted = await cache.delete(key);
       res.json({ 
         success: true, 
         message: deleted ? `Cache key '${key}' cleared` : `Cache key '${key}' not found`,
@@ -66,7 +85,7 @@ router.delete('/cache', async (req, res) => {
       });
     } else {
       // Clear all cache
-      cache.clear();
+      await cache.clear();
       res.json({ 
         success: true, 
         message: 'All cache cleared'
@@ -79,7 +98,7 @@ router.delete('/cache', async (req, res) => {
         userId: req.user.id,
         type: 'SETTINGS_CHANGED',
         message: key ? `Admin cleared cache key: ${key}` : 'Admin cleared all cache',
-        metadata: { cacheKey: key || 'all' },
+        metadata: JSON.stringify({ cacheKey: key || 'all' }),
         isAdminActivity: true
       }
     });
@@ -259,21 +278,53 @@ router.get('/users', async (req, res) => {
       prisma.user.count({ where })
     ]);
 
-    // Get storage usage for each user
+    // Get storage usage and ban status for each user
     const usersWithStats = await Promise.all(
       users.map(async (user) => {
-        const storageUsed = await prisma.image.aggregate({
-          where: { userId: user.id },
-          _sum: { fileSize: true }
-        });
+        const [storageUsed, activeBans] = await Promise.all([
+          prisma.image.aggregate({
+            where: { userId: user.id },
+            _sum: { fileSize: true }
+          }),
+          prisma.userBan.findMany({
+            where: {
+              AND: [
+                {
+                  OR: [
+                    { userId: user.id },
+                    { email: user.email }
+                  ]
+                },
+                { isActive: true },
+                {
+                  OR: [
+                    { expiresAt: null }, // Permanent bans
+                    { expiresAt: { gt: new Date() } } // Non-expired temporary bans
+                  ]
+                }
+              ]
+            }
+          })
+        ]);
+
+        // Determine user status based on bans and activity
+        let status = 'active';
+        if (activeBans.length > 0) {
+          status = 'banned';
+        } else if (!user.lastLogin || (Date.now() - new Date(user.lastLogin).getTime()) >= 30 * 24 * 60 * 60 * 1000) {
+          status = 'inactive';
+        }
 
         return {
           ...user,
           uploads: user._count.images,
           storageUsed: storageUsed._sum.fileSize || 0,
-          status: user.lastLogin && 
-            (Date.now() - new Date(user.lastLogin).getTime()) < 30 * 24 * 60 * 60 * 1000 
-            ? 'active' : 'inactive'
+          status,
+          banInfo: activeBans.length > 0 ? {
+            banType: activeBans[0].banType,
+            reason: activeBans[0].reason,
+            bannedAt: activeBans[0].bannedAt
+          } : null
         };
       })
     );
@@ -331,7 +382,7 @@ router.put('/users/:userId', async (req, res) => {
         userId: req.user.id,
         type: 'SETTINGS_CHANGED',
         message: activityMessage,
-        metadata: { action, role, targetUserId: userId },
+        metadata: JSON.stringify({ action, role, targetUserId: userId }),
         isAdminActivity: true
       }
     });
@@ -343,13 +394,409 @@ router.put('/users/:userId', async (req, res) => {
   }
 });
 
+// Get detailed user profile
+router.get('/users/:userId/profile', async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      include: {
+        images: {
+          select: {
+            id: true,
+            fileName: true,
+            fileKey: true,
+            fileSize: true,
+            fileType: true,
+            uploadedAt: true,
+            _count: {
+              select: {
+                analytics: {
+                  where: { event: 'VIEW' }
+                }
+              }
+            }
+          },
+          orderBy: { uploadedAt: 'desc' },
+          take: 20
+        },
+        activities: {
+          select: {
+            id: true,
+            type: true,
+            message: true,
+            createdAt: true,
+            ipAddress: true
+          },
+          orderBy: { createdAt: 'desc' },
+          take: 50
+        },
+        accounts: {
+          select: {
+            provider: true,
+            type: true
+          }
+        },
+        _count: {
+          select: {
+            images: true,
+            activities: true
+          }
+        }
+      }
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Get storage usage and ban status
+    const [storageUsed, recentAnalytics, activeBans] = await Promise.all([
+      prisma.image.aggregate({
+        where: { userId },
+        _sum: { fileSize: true }
+      }),
+      prisma.analytics.findMany({
+        where: { userId },
+        include: {
+          image: {
+            select: {
+              fileName: true,
+              fileKey: true
+            }
+          }
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 20
+      }),
+      prisma.userBan.findMany({
+        where: {
+          AND: [
+            {
+              OR: [
+                { userId },
+                { email: user.email }
+              ]
+            },
+            { isActive: true },
+            {
+              OR: [
+                { expiresAt: null }, // Permanent bans
+                { expiresAt: { gt: new Date() } } // Non-expired temporary bans
+              ]
+            }
+          ]
+        },
+        include: {
+          bannedByUser: {
+            select: { name: true, email: true }
+          }
+        }
+      })
+    ]);
+
+    // Transform uploads data
+    const uploads = user.images.map(image => ({
+      ...image,
+      viewCount: image._count.analytics
+    }));
+
+    // Determine user status based on bans and activity
+    let status = 'active';
+    if (activeBans.length > 0) {
+      status = 'banned';
+    } else if (!user.lastLogin || (Date.now() - new Date(user.lastLogin).getTime()) >= 30 * 24 * 60 * 60 * 1000) {
+      status = 'inactive';
+    }
+
+    const profile = {
+      ...user,
+      uploads,
+      totalUploads: user._count.images,
+      totalActivities: user._count.activities,
+      storageUsed: storageUsed._sum.fileSize || 0,
+      recentAnalytics,
+      status,
+      banInfo: activeBans.length > 0 ? {
+        banType: activeBans[0].banType,
+        reason: activeBans[0].reason,
+        bannedAt: activeBans[0].bannedAt,
+        bannedBy: activeBans[0].bannedByUser
+      } : null
+    };
+
+    res.json(profile);
+  } catch (error) {
+    console.error('Admin user profile error:', error);
+    res.status(500).json({ error: 'Failed to fetch user profile' });
+  }
+});
+
+// Send password reset email
+router.post('/users/:userId/reset-password', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const emailService = require('../services/email.service');
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { email: true, name: true }
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Generate reset token
+    const crypto = require('crypto');
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const resetExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+
+    // Update user with reset token
+    await prisma.user.update({
+      where: { id: userId },
+      data: {
+        passwordResetToken: resetToken,
+        passwordResetExpires: resetExpires
+      }
+    });
+
+    // Send reset email
+    await emailService.sendPasswordResetEmail(user.email, user.name, resetToken);
+
+    // Log admin activity
+    await prisma.activity.create({
+      data: {
+        userId: req.user.id,
+        type: 'SETTINGS_CHANGED',
+        message: `Admin sent password reset to user`,
+        metadata: JSON.stringify({ 
+          targetUserId: userId, 
+          targetEmail: user.email,
+          action: 'password_reset_sent' 
+        }),
+        isAdminActivity: true
+      }
+    });
+
+    res.json({ 
+      success: true, 
+      message: 'Password reset email sent successfully' 
+    });
+  } catch (error) {
+    console.error('Admin password reset error:', error);
+    res.status(500).json({ error: 'Failed to send password reset email' });
+  }
+});
+
+// Ban user
+router.post('/users/:userId/ban', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { reason, banType = 'ACCOUNT' } = req.body; // ACCOUNT, EMAIL, IP, FULL
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      include: {
+        activities: {
+          select: { ipAddress: true },
+          where: { ipAddress: { not: null } },
+          distinct: ['ipAddress'],
+          take: 20
+        }
+      }
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Collect IP addresses for IP-based bans
+    const ipAddresses = user.activities.map(a => a.ipAddress).filter(Boolean);
+
+    // Create ban record in dedicated table
+    const ban = await prisma.userBan.create({
+      data: {
+        userId,
+        email: user.email,
+        ipAddresses: ipAddresses.length > 0 ? JSON.stringify(ipAddresses) : null,
+        banType: banType.toUpperCase(),
+        reason: reason || 'Banned by administrator',
+        bannedBy: req.user.id,
+        isActive: true,
+        metadata: JSON.stringify({
+          originalIpCount: ipAddresses.length,
+          bannedFromAdmin: true
+        })
+      }
+    });
+
+    // Deactivate user account for account-based bans
+    if (banType === 'ACCOUNT' || banType === 'FULL') {
+      await prisma.user.update({
+        where: { id: userId },
+        data: { 
+          lastLogin: new Date('1970-01-01'), // Mark as inactive
+          emailVerified: null // Invalidate email verification
+        }
+      });
+
+      // Delete user sessions
+      await prisma.session.deleteMany({
+        where: { userId }
+      });
+    }
+
+    // Log admin activity
+    await prisma.activity.create({
+      data: {
+        userId: req.user.id,
+        type: 'SETTINGS_CHANGED',
+        message: `Admin banned user account (${banType} ban)`,
+        metadata: JSON.stringify({ 
+          targetUserId: userId, 
+          targetEmail: user.email,
+          banType,
+          reason,
+          banId: ban.id,
+          ipCount: ipAddresses.length,
+          action: 'user_banned' 
+        }),
+        isAdminActivity: true
+      }
+    });
+
+    res.json({ 
+      success: true, 
+      message: `User banned successfully (${banType} ban)`,
+      banId: ban.id,
+      ipAddressesTracked: ipAddresses.length
+    });
+  } catch (error) {
+    console.error('Admin ban user error:', error);
+    res.status(500).json({ error: 'Failed to ban user' });
+  }
+});
+
+// Unban user
+router.post('/users/:userId/unban', async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { email: true, name: true }
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Find and deactivate active ban records
+    const activeBans = await prisma.userBan.findMany({
+      where: {
+        AND: [
+          {
+            OR: [
+              { userId },
+              { email: user.email }
+            ]
+          },
+          { isActive: true },
+          {
+            OR: [
+              { expiresAt: null }, // Permanent bans
+              { expiresAt: { gt: new Date() } } // Non-expired temporary bans
+            ]
+          }
+        ]
+      }
+    });
+
+    const unbannedBans = [];
+    for (const ban of activeBans) {
+      const unbannedBan = await prisma.userBan.update({
+        where: { id: ban.id },
+        data: {
+          isActive: false,
+          unbannedAt: new Date(),
+          unbannedBy: req.user.id
+        }
+      });
+      unbannedBans.push(unbannedBan);
+    }
+
+    // Reactivate user account
+    await prisma.user.update({
+      where: { id: userId },
+      data: { 
+        lastLogin: new Date(), // Mark as active
+        emailVerified: new Date() // Re-verify email
+      }
+    });
+
+    // Log admin activity
+    await prisma.activity.create({
+      data: {
+        userId: req.user.id,
+        type: 'SETTINGS_CHANGED',
+        message: `Admin unbanned user account`,
+        metadata: JSON.stringify({ 
+          targetUserId: userId, 
+          targetEmail: user.email,
+          unbannedBanIds: unbannedBans.map(b => b.id),
+          bansRemoved: unbannedBans.length,
+          action: 'user_unbanned' 
+        }),
+        isAdminActivity: true
+      }
+    });
+
+    res.json({ 
+      success: true, 
+      message: 'User unbanned successfully',
+      bansRemoved: unbannedBans.length
+    });
+  } catch (error) {
+    console.error('Admin unban user error:', error);
+    res.status(500).json({ error: 'Failed to unban user' });
+  }
+});
+
 // Delete user
 router.delete('/users/:userId', async (req, res) => {
   try {
     const { userId } = req.params;
 
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { email: true, name: true }
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
     // Delete user's files first
     await prisma.image.deleteMany({
+      where: { userId }
+    });
+
+    // Delete related records
+    await prisma.analytics.deleteMany({
+      where: { userId }
+    });
+
+    await prisma.activity.deleteMany({
+      where: { userId }
+    });
+
+    await prisma.account.deleteMany({
+      where: { userId }
+    });
+
+    await prisma.session.deleteMany({
       where: { userId }
     });
 
@@ -362,9 +809,14 @@ router.delete('/users/:userId', async (req, res) => {
     await prisma.activity.create({
       data: {
         userId: req.user.id,
-        type: 'SETTINGS_CHANGED', // Use SETTINGS_CHANGED for admin actions instead of DELETE
-        message: `Admin deleted user account`,
-        metadata: { targetUserId: userId, action: 'delete_user' },
+        type: 'SETTINGS_CHANGED',
+        message: `Admin deleted user account: ${user.email}`,
+        metadata: JSON.stringify({ 
+          targetUserId: userId, 
+          targetEmail: user.email,
+          targetName: user.name,
+          action: 'delete_user' 
+        }),
         isAdminActivity: true
       }
     });
@@ -640,7 +1092,7 @@ router.put('/settings', async (req, res) => {
     }
     
     // Invalidate public system settings cache
-    cache.delete('public-system-settings');
+    await cache.delete('public-system-settings');
     console.log('[Cache] Invalidated public system settings cache after update');
 
     await prisma.activity.create({
@@ -648,7 +1100,7 @@ router.put('/settings', async (req, res) => {
         userId: req.user.id,
         type: 'SETTINGS_CHANGED',
         message: activityMessage,
-        metadata: settings,
+        metadata: JSON.stringify(settings),
         isAdminActivity: true
       }
     });
@@ -734,7 +1186,7 @@ router.delete('/logs', async (req, res) => {
         userId: req.user.id,
         type: 'SETTINGS_CHANGED',
         message: `Admin cleaned up system logs older than ${days} days`,
-        metadata: { deletedCount: deletedCount.count, days: parseInt(days) },
+        metadata: JSON.stringify({ deletedCount: deletedCount.count, days: parseInt(days) }),
         isAdminActivity: true
       }
     });
@@ -860,7 +1312,7 @@ router.post('/health/check', async (req, res) => {
         userId: req.user.id,
         type: 'SETTINGS_CHANGED',
         message: 'Admin triggered manual health check',
-        metadata: { status: healthData.status },
+        metadata: JSON.stringify({ status: healthData.status }),
         isAdminActivity: true
       }
     });
@@ -923,7 +1375,7 @@ router.post('/messages', async (req, res) => {
     });
 
     // Invalidate public system messages cache
-    cache.delete('public-system-messages');
+    await cache.delete('public-system-messages');
     console.log('[Cache] Invalidated public system messages cache after creation');
 
     // Log admin activity
@@ -932,7 +1384,7 @@ router.post('/messages', async (req, res) => {
         userId: req.user.id,
         type: 'SETTINGS_CHANGED',
         message: `Admin created system message: ${title}`,
-        metadata: { messageId: message.id, type, title },
+        metadata: JSON.stringify({ messageId: message.id, type, title }),
         isAdminActivity: true
       }
     });
@@ -966,7 +1418,7 @@ router.put('/messages/:messageId', async (req, res) => {
     });
 
     // Invalidate public system messages cache
-    cache.delete('public-system-messages');
+    await cache.delete('public-system-messages');
     console.log('[Cache] Invalidated public system messages cache after update');
 
     // Log admin activity
@@ -978,7 +1430,7 @@ router.put('/messages/:messageId', async (req, res) => {
         userId: req.user.id,
         type: 'SETTINGS_CHANGED',
         message: `Admin ${action} system message: ${message.title}`,
-        metadata: { messageId, action, updates: updateData },
+        metadata: JSON.stringify({ messageId, action, updates: updateData }),
         isAdminActivity: true
       }
     });
@@ -1007,7 +1459,7 @@ router.delete('/messages/:messageId', async (req, res) => {
     });
 
     // Invalidate public system messages cache
-    cache.delete('public-system-messages');
+    await cache.delete('public-system-messages');
     console.log('[Cache] Invalidated public system messages cache after deletion');
 
     // Log admin activity
@@ -1016,7 +1468,7 @@ router.delete('/messages/:messageId', async (req, res) => {
         userId: req.user.id,
         type: 'SETTINGS_CHANGED',
         message: `Admin deleted system message: ${message.title}`,
-        metadata: { messageId, title: message.title },
+        metadata: JSON.stringify({ messageId, title: message.title }),
         isAdminActivity: true
       }
     });
@@ -1062,7 +1514,7 @@ router.post('/users', async (req, res) => {
         userId: req.user.id,
         type: 'SETTINGS_CHANGED',
         message: `Admin created new user account`,
-        metadata: { newUserId: user.id, role, email, action: 'create_user' },
+        metadata: JSON.stringify({ newUserId: user.id, role, email, action: 'create_user' }),
         isAdminActivity: true
       }
     });
@@ -1103,11 +1555,11 @@ router.post('/cleanup/run', async (req, res) => {
         userId: req.user.id,
         type: 'SETTINGS_CHANGED',
         message: `Admin triggered manual guest upload cleanup`,
-        metadata: { 
+        metadata: JSON.stringify({ 
           deletedCount: result.deletedCount,
           errorCount: result.errorCount,
           totalExpired: result.totalExpired
-        },
+        }),
         isAdminActivity: true
       }
     });

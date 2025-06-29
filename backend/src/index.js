@@ -15,7 +15,7 @@ const adminRoutes = require('./routes/admin.routes');
 const publicRoutes = require('./routes/public.routes');
 const authRoutes = require('./routes/auth.routes');
 const { router: healthRoutes, performBackgroundHealthCheck } = require('./routes/health.routes');
-const validateApiKey = require('./middleware/apiKey.middleware');
+const { validateApiKey } = require('./middleware/apiKey.middleware');
 
 const app = express();
 const PORT = process.env.PORT || 3001;

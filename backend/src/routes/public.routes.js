@@ -1,7 +1,7 @@
 const express = require('express');
 const cleanupService = require('../services/cleanup.service');
 const prisma = require('../lib/prisma');
-const { cache } = require('../lib/cache');
+const { cache } = require('../lib/cache-manager');
 
 const router = express.Router();
 
@@ -10,7 +10,7 @@ router.get('/settings', async (req, res) => {
   try {
     // Check cache first
     const cacheKey = 'public-system-settings';
-    const cachedSettings = cache.get(cacheKey);
+    const cachedSettings = await cache.get(cacheKey);
     
     if (cachedSettings) {
       console.log('[Cache] Hit for public system settings');
@@ -49,7 +49,7 @@ router.get('/settings', async (req, res) => {
     const finalSettings = { ...defaults, ...settings };
 
     // Cache for 5 minutes (300000ms) - settings change less frequently
-    cache.set(cacheKey, finalSettings, 300000);
+    await cache.set(cacheKey, finalSettings, 300000);
     console.log('[Cache] Stored public system settings in cache');
 
     res.json(finalSettings);
@@ -64,7 +64,7 @@ router.get('/messages', async (req, res) => {
   try {
     // Check cache first
     const cacheKey = 'public-system-messages';
-    const cachedMessages = cache.get(cacheKey);
+    const cachedMessages = await cache.get(cacheKey);
     
     if (cachedMessages) {
       console.log('[Cache] Hit for public system messages');
@@ -86,7 +86,7 @@ router.get('/messages', async (req, res) => {
     });
 
     // Cache for 10 minutes (600000ms)
-    cache.set(cacheKey, messages, 600000);
+    await cache.set(cacheKey, messages, 600000);
     console.log(`[Cache] Stored ${messages.length} system messages in cache`);
 
     res.json({ messages });

@@ -110,10 +110,10 @@ export function useFileUpload() {
           if (optimizationResult) {
             fileToUpload = optimizationResult.optimizedFile;
             clientOptimized = true;
-            console.log(`Client-side optimization: ${file.size} → ${fileToUpload.size} bytes (${Math.round((1 - optimizationResult.stats.compressionRatio) * 100)}% reduction)`);
+            // Client-side optimization completed successfully
           }
-        } catch (error) {
-          console.warn('Client-side optimization failed, falling back to server optimization:', error);
+                  } catch {
+            // Client-side optimization failed, falling back to server optimization
           // Continue with original file and let server handle optimization
         }
       }

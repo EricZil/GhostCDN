@@ -17,6 +17,7 @@ import Pagination from '@/components/dashboard/Pagination';
 import BulkActions from '@/components/dashboard/BulkActions';
 import AdminOverview from '@/components/dashboard/admin/AdminOverview';
 import AdminCachePerformance from '@/components/dashboard/admin/AdminCachePerformance';
+import UserProfileModal from '@/components/dashboard/admin/UserProfileModal';
 
 interface DashboardModalProps {
   isOpen: boolean;
@@ -24,6 +25,7 @@ interface DashboardModalProps {
 }
 
 interface AdminUser {
+  id: string;
   name: string;
   email: string;
   uploads: number;
@@ -92,6 +94,7 @@ export default function DashboardModal({ isOpen, onClose }: DashboardModalProps)
     fileId: string;
     fileName: string;
   }>({ isOpen: false, fileId: '', fileName: '' });
+  const [copiedFileId, setCopiedFileId] = useState<string | null>(null);
   
   // Dashboard hook
   const {
@@ -153,6 +156,12 @@ export default function DashboardModal({ isOpen, onClose }: DashboardModalProps)
     title: '',
     content: '',
     type: 'INFO' as 'CRITICAL' | 'WARNING' | 'INFO'
+  });
+  
+  // User Profile Modal state
+  const [userProfileModal, setUserProfileModal] = useState({
+    isOpen: false,
+    userId: ''
   });
 
   // Load user avatar
@@ -407,6 +416,55 @@ export default function DashboardModal({ isOpen, onClose }: DashboardModalProps)
     }
   };
 
+  // User management functions
+  const openUserProfile = (userId: string) => {
+    setUserProfileModal({
+      isOpen: true,
+      userId
+    });
+  };
+
+  const closeUserProfile = () => {
+    setUserProfileModal({
+      isOpen: false,
+      userId: ''
+    });
+  };
+
+  const handleUserUpdate = () => {
+    // Refresh users list
+    if (user?.role === 'ADMIN') {
+      fetchUsers().then(data => setAdminUsers(data.users)).catch(() => {});
+    }
+  };
+
+  // Add copy to clipboard handler with acknowledgment
+  const handleCopyLink = async (fileKey: string, fileId: string) => {
+    try {
+      const link = `${window.location.origin}/view/${encodeURIComponent(fileKey)}`;
+      await navigator.clipboard.writeText(link);
+      setCopiedFileId(fileId);
+      
+      // Show notification
+      showNotification({
+        type: 'success',
+        title: 'Link Copied!',
+        message: 'File link has been copied to clipboard',
+        duration: 2000
+      });
+      
+      // Reset copy state after 2 seconds
+      setTimeout(() => setCopiedFileId(null), 2000);
+    } catch {
+      showNotification({
+        type: 'error',
+        title: 'Copy Failed',
+        message: 'Failed to copy link to clipboard',
+        duration: 3000
+      });
+    }
+  };
+
   if (!isOpen) return null;
 
   // Define tabs based on admin mode
@@ -504,7 +562,9 @@ export default function DashboardModal({ isOpen, onClose }: DashboardModalProps)
                 </div>
                 <div className="text-right">
                   <p className="text-sm text-gray-400">Last login</p>
-                  <p className="text-white font-medium">Today at 2:30 PM</p>
+                  <p className="text-white font-medium">
+                    {user?.lastLogin ? formatTimeAgo(user.lastLogin) : 'First time'}
+                  </p>
                 </div>
               </div>
             </div>
@@ -686,24 +746,48 @@ export default function DashboardModal({ isOpen, onClose }: DashboardModalProps)
                           <div className="text-right">
                             <p className="text-sm text-white">{file.viewCount} views</p>
                           </div>
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-3">
+                            {/* Enhanced Copy Button */}
                             <button 
-                              onClick={() => navigator.clipboard.writeText(`${window.location.origin}/view/${encodeURIComponent(file.fileKey)}`)}
-                              className="p-1.5 rounded-lg bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 transition-colors"
-                              title="Copy link"
+                              onClick={() => handleCopyLink(file.fileKey, file.id)}
+                              className={`group relative px-3 py-2 rounded-xl border transition-all duration-300 transform hover:scale-105 active:scale-95 ${
+                                copiedFileId === file.id
+                                  ? 'bg-gradient-to-r from-green-500/30 to-emerald-500/30 border-green-400/50 text-green-300 shadow-lg shadow-green-500/20'
+                                  : 'bg-gradient-to-r from-blue-500/10 to-indigo-500/10 border-blue-400/30 text-blue-300 hover:from-blue-500/20 hover:to-indigo-500/20 hover:border-blue-400/50 hover:shadow-lg hover:shadow-blue-500/20'
+                              }`}
+                              title={copiedFileId === file.id ? "Copied!" : "Copy link"}
                             >
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                              </svg>
+                              <div className="flex items-center gap-2">
+                                {copiedFileId === file.id ? (
+                                  <>
+                                    <svg className="w-4 h-4 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                                    </svg>
+                                    <span className="text-xs font-medium">Copied!</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <svg className="w-4 h-4 group-hover:rotate-12 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                    </svg>
+                                    <span className="text-xs font-medium">Copy</span>
+                                  </>
+                                )}
+                              </div>
                             </button>
+
+                            {/* Enhanced Delete Button */}
                             <button 
                               onClick={() => handleDeleteFile(file.id, file.fileName)}
-                              className="p-1.5 rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors"
+                              className="group relative px-3 py-2 rounded-xl border bg-gradient-to-r from-red-500/10 to-rose-500/10 border-red-400/30 text-red-300 hover:from-red-500/20 hover:to-rose-500/20 hover:border-red-400/50 hover:shadow-lg hover:shadow-red-500/20 transition-all duration-300 transform hover:scale-105 active:scale-95"
                               title="Delete file"
                             >
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                              </svg>
+                              <div className="flex items-center gap-2">
+                                <svg className="w-4 h-4 group-hover:rotate-12 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                </svg>
+                                <span className="text-xs font-medium">Delete</span>
+                              </div>
                             </button>
                           </div>
                         </div>
@@ -729,107 +813,133 @@ export default function DashboardModal({ isOpen, onClose }: DashboardModalProps)
 
       case 'analytics':
         return (
-          <div className="space-y-6">
-            {/* Analytics Header with Period Selector */}
-            <div className="flex items-center justify-between">
-              <h3 className="text-2xl font-semibold text-white">Analytics Dashboard</h3>
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-gray-400">Time Period:</span>
-                <select
-                  value={analyticsPeriod}
-                  onChange={(e) => handleAnalyticsPeriodChange(e.target.value)}
-                  className="px-3 py-2 bg-black/50 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
-                >
-                  <option value="24h">Last 24 Hours</option>
-                  <option value="7d">Last 7 Days</option>
-                  <option value="30d">Last 30 Days</option>
-                  <option value="90d">Last 90 Days</option>
-                </select>
+          <div className="relative">
+            {/* Analytics Content (blurred) */}
+            <div className="space-y-6 blur-sm pointer-events-none">
+              {/* Analytics Header with Period Selector */}
+              <div className="flex items-center justify-between">
+                <h3 className="text-2xl font-semibold text-white">Analytics Dashboard</h3>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-gray-400">Time Period:</span>
+                  <select
+                    value={analyticsPeriod}
+                    onChange={(e) => handleAnalyticsPeriodChange(e.target.value)}
+                    className="px-3 py-2 bg-black/50 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  >
+                    <option value="24h">Last 24 Hours</option>
+                    <option value="7d">Last 7 Days</option>
+                    <option value="30d">Last 30 Days</option>
+                    <option value="90d">Last 90 Days</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Analytics Overview */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="bg-[rgba(20,20,35,0.6)] rounded-xl p-6 border border-gray-800/40">
+                  <h4 className="text-lg font-semibold text-white mb-4">Views Over Time</h4>
+                  {analytics ? (
+                    <ViewsChart data={analytics.viewsOverTime} period={analyticsPeriod} />
+                  ) : (
+                    <div className="h-80 flex items-center justify-center">
+                      <div className="text-center">
+                        <div className="w-8 h-8 border-2 border-purple-500 border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
+                        <p className="text-gray-400">Loading chart...</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="bg-[rgba(20,20,35,0.6)] rounded-xl p-6 border border-gray-800/40">
+                  <h4 className="text-lg font-semibold text-white mb-4">Top Performing Files</h4>
+                  {analytics ? (
+                    <TopFilesChart data={analytics.topFiles} />
+                  ) : (
+                    <div className="h-80 flex items-center justify-center">
+                      <div className="text-center">
+                        <div className="w-8 h-8 border-2 border-purple-500 border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
+                        <p className="text-gray-400">Loading chart...</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Detailed Stats */}
+              <div className="bg-[rgba(20,20,35,0.6)] rounded-xl p-6 border border-gray-800/40">
+                <h4 className="text-lg font-semibold text-white mb-4">Detailed Analytics</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                  {analytics ? [
+                    { 
+                      label: 'Avg. Views per File', 
+                      value: analytics.averageViewsPerFile ? analytics.averageViewsPerFile.toFixed(1) : '0', 
+                      trend: analytics.averageViewsPerFile > 0 ? 'up' : 'neutral' 
+                    },
+                    { 
+                      label: 'Peak Traffic Hour', 
+                      value: analytics.peakTrafficHour || 'N/A', 
+                      trend: 'neutral' 
+                    },
+                    { 
+                      label: 'Most Popular Format', 
+                      value: analytics.mostPopularFormat || 'N/A', 
+                      trend: analytics.mostPopularFormat ? 'up' : 'neutral' 
+                    },
+                    { 
+                      label: 'Total Events', 
+                      value: analytics.totalEvents ? analytics.totalEvents.toLocaleString() : '0', 
+                      trend: analytics.totalEvents > 0 ? 'up' : 'neutral' 
+                    },
+                  ].map((stat, index) => (
+                    <div key={index} className="text-center">
+                      <p className="text-2xl font-bold text-white mb-1">{stat.value}</p>
+                      <p className="text-sm text-gray-400 mb-2">{stat.label}</p>
+                      <div className={`inline-flex items-center text-xs px-2 py-1 rounded-full ${
+                        stat.trend === 'up' ? 'bg-green-500/20 text-green-400' :
+                        stat.trend === 'down' ? 'bg-red-500/20 text-red-400' :
+                        'bg-gray-500/20 text-gray-400'
+                      }`}>
+                        {stat.trend === 'up' ? '↗' : stat.trend === 'down' ? '↘' : '→'}
+                      </div>
+                    </div>
+                  )) : [
+                    { label: 'Avg. Views per File', value: '...', trend: 'neutral' },
+                    { label: 'Peak Traffic Hour', value: '...', trend: 'neutral' },
+                    { label: 'Most Popular Format', value: '...', trend: 'neutral' },
+                    { label: 'Total Events', value: '...', trend: 'neutral' },
+                  ].map((stat, index) => (
+                    <div key={index} className="text-center">
+                      <p className="text-2xl font-bold text-white mb-1">{stat.value}</p>
+                      <p className="text-sm text-gray-400 mb-2">{stat.label}</p>
+                      <div className="inline-flex items-center text-xs px-2 py-1 rounded-full bg-gray-500/20 text-gray-400">
+                        →
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
 
-            {/* Analytics Overview */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="bg-[rgba(20,20,35,0.6)] rounded-xl p-6 border border-gray-800/40">
-                <h4 className="text-lg font-semibold text-white mb-4">Views Over Time</h4>
-                {analytics ? (
-                  <ViewsChart data={analytics.viewsOverTime} period={analyticsPeriod} />
-                ) : (
-                  <div className="h-80 flex items-center justify-center">
-                    <div className="text-center">
-                      <div className="w-8 h-8 border-2 border-purple-500 border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
-                      <p className="text-gray-400">Loading chart...</p>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <div className="bg-[rgba(20,20,35,0.6)] rounded-xl p-6 border border-gray-800/40">
-                <h4 className="text-lg font-semibold text-white mb-4">Top Performing Files</h4>
-                {analytics ? (
-                  <TopFilesChart data={analytics.topFiles} />
-                ) : (
-                  <div className="h-80 flex items-center justify-center">
-                    <div className="text-center">
-                      <div className="w-8 h-8 border-2 border-purple-500 border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
-                      <p className="text-gray-400">Loading chart...</p>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Detailed Stats */}
-            <div className="bg-[rgba(20,20,35,0.6)] rounded-xl p-6 border border-gray-800/40">
-              <h4 className="text-lg font-semibold text-white mb-4">Detailed Analytics</h4>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                {analytics ? [
-                  { 
-                    label: 'Avg. Views per File', 
-                    value: analytics.averageViewsPerFile ? analytics.averageViewsPerFile.toFixed(1) : '0', 
-                    trend: analytics.averageViewsPerFile > 0 ? 'up' : 'neutral' 
-                  },
-                  { 
-                    label: 'Peak Traffic Hour', 
-                    value: analytics.peakTrafficHour || 'N/A', 
-                    trend: 'neutral' 
-                  },
-                  { 
-                    label: 'Most Popular Format', 
-                    value: analytics.mostPopularFormat || 'N/A', 
-                    trend: analytics.mostPopularFormat ? 'up' : 'neutral' 
-                  },
-                  { 
-                    label: 'Total Events', 
-                    value: analytics.totalEvents ? analytics.totalEvents.toLocaleString() : '0', 
-                    trend: analytics.totalEvents > 0 ? 'up' : 'neutral' 
-                  },
-                ].map((stat, index) => (
-                  <div key={index} className="text-center">
-                    <p className="text-2xl font-bold text-white mb-1">{stat.value}</p>
-                    <p className="text-sm text-gray-400 mb-2">{stat.label}</p>
-                    <div className={`inline-flex items-center text-xs px-2 py-1 rounded-full ${
-                      stat.trend === 'up' ? 'bg-green-500/20 text-green-400' :
-                      stat.trend === 'down' ? 'bg-red-500/20 text-red-400' :
-                      'bg-gray-500/20 text-gray-400'
-                    }`}>
-                      {stat.trend === 'up' ? '↗' : stat.trend === 'down' ? '↘' : '→'}
-                    </div>
-                  </div>
-                )) : [
-                  { label: 'Avg. Views per File', value: '...', trend: 'neutral' },
-                  { label: 'Peak Traffic Hour', value: '...', trend: 'neutral' },
-                  { label: 'Most Popular Format', value: '...', trend: 'neutral' },
-                  { label: 'Total Events', value: '...', trend: 'neutral' },
-                ].map((stat, index) => (
-                  <div key={index} className="text-center">
-                    <p className="text-2xl font-bold text-white mb-1">{stat.value}</p>
-                    <p className="text-sm text-gray-400 mb-2">{stat.label}</p>
-                    <div className="inline-flex items-center text-xs px-2 py-1 rounded-full bg-gray-500/20 text-gray-400">
-                      →
-                    </div>
-                  </div>
-                ))}
+            {/* Full Tab Overlay for Planned Feature */}
+            <div className="absolute inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-10">
+              <div className="text-center space-y-6 p-8">
+                <div className="w-20 h-20 mx-auto rounded-full bg-gradient-to-r from-orange-500/20 to-yellow-500/20 border border-orange-400/30 flex items-center justify-center">
+                  <svg className="w-10 h-10 text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+                <div>
+                  <h3 className="text-3xl font-bold text-white mb-3">Analytics</h3>
+                  <p className="text-xl text-gray-300 mb-2">Possible Feature Update</p>
+                  <p className="text-base text-gray-400 max-w-lg mx-auto leading-relaxed">
+                    Analytics tracking is being developed. View tracking will be implemented in a future update to provide detailed insights about your uploaded files.
+                  </p>
+                </div>
+                <div className="flex items-center justify-center gap-3 text-orange-400">
+                  <div className="w-3 h-3 bg-orange-400 rounded-full animate-pulse"></div>
+                  <span className="text-base font-medium">Coming Soon</span>
+                  <div className="w-3 h-3 bg-orange-400 rounded-full animate-pulse animation-delay-300"></div>
+                </div>
               </div>
             </div>
           </div>
@@ -837,73 +947,100 @@ export default function DashboardModal({ isOpen, onClose }: DashboardModalProps)
 
       case 'storage':
         return (
-          <div className="space-y-6">
-            {/* Storage Overview */}
-            <div className="bg-[rgba(20,20,35,0.6)] rounded-xl p-6 border border-gray-800/40">
-              <h4 className="text-lg font-semibold text-white mb-4">Storage Usage</h4>
-              <div className="mb-4">
-                <div className="flex justify-between text-sm mb-2">
-                  <span className="text-gray-400">Used: {storageInfo?.totalSize !== undefined ? formatFileSize(storageInfo.totalSize) : '0 KB'}</span>
-                  <span className="text-gray-400">Available: {storageInfo?.available !== undefined ? formatFileSize(storageInfo.available) : '10.0 GB'}</span>
+          <div className="relative">
+            {/* Storage Content (blurred) */}
+            <div className="space-y-6 blur-sm pointer-events-none">
+              {/* Storage Overview */}
+              <div className="bg-[rgba(20,20,35,0.6)] rounded-xl p-6 border border-gray-800/40">
+                <h4 className="text-lg font-semibold text-white mb-4">Storage Usage</h4>
+                <div className="mb-4">
+                  <div className="flex justify-between text-sm mb-2">
+                    <span className="text-gray-400">Used: {storageInfo?.totalSize !== undefined ? formatFileSize(storageInfo.totalSize) : '0 KB'}</span>
+                    <span className="text-gray-400">Available: {storageInfo?.available !== undefined ? formatFileSize(storageInfo.available) : '10.0 GB'}</span>
+                  </div>
+                  <div className="w-full bg-gray-800 rounded-full h-3">
+                    <div 
+                      className="bg-gradient-to-r from-blue-500 to-purple-500 h-3 rounded-full transition-all duration-500" 
+                      style={{ width: `${storageInfo?.storagePercentage ? Math.min(storageInfo.storagePercentage, 100) : 0}%` }}
+                    ></div>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-2">
+                    {storageInfo?.storagePercentage !== undefined && storageInfo?.storageLimit ? 
+                      `${storageInfo.storagePercentage.toFixed(1)}% of ${formatFileSize(storageInfo.storageLimit)} used` : 
+                      '0.0% of 10.0 GB used'}
+                  </p>
                 </div>
-                <div className="w-full bg-gray-800 rounded-full h-3">
-                  <div 
-                    className="bg-gradient-to-r from-blue-500 to-purple-500 h-3 rounded-full transition-all duration-500" 
-                    style={{ width: `${storageInfo?.storagePercentage ? Math.min(storageInfo.storagePercentage, 100) : 0}%` }}
-                  ></div>
-                </div>
-                <p className="text-xs text-gray-500 mt-2">
-                  {storageInfo?.storagePercentage !== undefined && storageInfo?.storageLimit ? 
-                    `${storageInfo.storagePercentage.toFixed(1)}% of ${formatFileSize(storageInfo.storageLimit)} used` : 
-                    '0.0% of 10.0 GB used'}
-                </p>
-              </div>
-              
-              {/* Storage Breakdown Chart */}
-              <div className="mt-6">
-                <h4 className="text-lg font-semibold text-white mb-4">Storage Breakdown by File Type</h4>
-                <div className="bg-[rgba(15,15,25,0.5)] rounded-xl p-6 border border-gray-800/30">
-                  {storageInfo ? (
-                    <StorageChart data={storageInfo.storageByType} formatFileSize={formatFileSize} />
-                  ) : (
-                    <div className="h-80 flex items-center justify-center">
-                      <div className="text-center">
-                        <div className="w-8 h-8 border-2 border-purple-500 border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
-                        <p className="text-gray-400">Loading storage data...</p>
+                
+                {/* Storage Breakdown Chart */}
+                <div className="mt-6">
+                  <h4 className="text-lg font-semibold text-white mb-4">Storage Breakdown by File Type</h4>
+                  <div className="bg-[rgba(15,15,25,0.5)] rounded-xl p-6 border border-gray-800/30">
+                    {storageInfo ? (
+                      <StorageChart data={storageInfo.storageByType} formatFileSize={formatFileSize} />
+                    ) : (
+                      <div className="h-80 flex items-center justify-center">
+                        <div className="text-center">
+                          <div className="w-8 h-8 border-2 border-purple-500 border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
+                          <p className="text-gray-400">Loading storage data...</p>
+                        </div>
                       </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Storage Management */}
+              <div className="bg-[rgba(20,20,35,0.6)] rounded-xl p-6 border border-gray-800/40">
+                <h4 className="text-lg font-semibold text-white mb-4">Storage Management</h4>
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between p-4 bg-[rgba(15,15,25,0.5)] rounded-lg border border-gray-800/30">
+                    <div>
+                      <p className="text-white font-medium">Auto-optimize uploads</p>
+                      <p className="text-sm text-gray-400">Automatically compress images to save space</p>
                     </div>
-                  )}
+                    <div className="w-12 h-6 bg-blue-500 rounded-full p-1 cursor-pointer">
+                      <div className="w-4 h-4 bg-white rounded-full ml-auto"></div>
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center justify-between p-4 bg-[rgba(15,15,25,0.5)] rounded-lg border border-gray-800/30">
+                    <div>
+                      <p className="text-white font-medium">Generate thumbnails</p>
+                      <p className="text-sm text-gray-400">Create multiple sizes for better performance</p>
+                    </div>
+                    <div className="w-12 h-6 bg-gray-600 rounded-full p-1 cursor-pointer">
+                      <div className="w-4 h-4 bg-white rounded-full"></div>
+                    </div>
+                  </div>
+
+                  <button className="w-full p-3 bg-red-500/20 text-red-400 rounded-lg border border-red-500/30 hover:bg-red-500/30 transition-colors">
+                    Clear Cache (128 MB)
+                  </button>
                 </div>
               </div>
             </div>
 
-            {/* Storage Management */}
-            <div className="bg-[rgba(20,20,35,0.6)] rounded-xl p-6 border border-gray-800/40">
-              <h4 className="text-lg font-semibold text-white mb-4">Storage Management</h4>
-              <div className="space-y-4">
-                <div className="flex items-center justify-between p-4 bg-[rgba(15,15,25,0.5)] rounded-lg border border-gray-800/30">
-                  <div>
-                    <p className="text-white font-medium">Auto-optimize uploads</p>
-                    <p className="text-sm text-gray-400">Automatically compress images to save space</p>
-                  </div>
-                  <div className="w-12 h-6 bg-blue-500 rounded-full p-1 cursor-pointer">
-                    <div className="w-4 h-4 bg-white rounded-full ml-auto"></div>
-                  </div>
+            {/* Full Tab Overlay for Planned Feature */}
+            <div className="absolute inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-10">
+              <div className="text-center space-y-6 p-8">
+                <div className="w-20 h-20 mx-auto rounded-full bg-gradient-to-r from-blue-500/20 to-cyan-500/20 border border-blue-400/30 flex items-center justify-center">
+                  <svg className="w-10 h-10 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 1.79 4 4 4h8c0 2.21 1.79 4 4 4h8c2.21 0 4-1.79 4-4V7c0-2.21-1.79-4-4-4H8c-2.21 0-4 1.79-4 4z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h8m-8 4h6" />
+                  </svg>
                 </div>
-                
-                <div className="flex items-center justify-between p-4 bg-[rgba(15,15,25,0.5)] rounded-lg border border-gray-800/30">
-                  <div>
-                    <p className="text-white font-medium">Generate thumbnails</p>
-                    <p className="text-sm text-gray-400">Create multiple sizes for better performance</p>
-                  </div>
-                  <div className="w-12 h-6 bg-gray-600 rounded-full p-1 cursor-pointer">
-                    <div className="w-4 h-4 bg-white rounded-full"></div>
-                  </div>
+                <div>
+                  <h3 className="text-3xl font-bold text-white mb-3">Storage Management</h3>
+                  <p className="text-xl text-gray-300 mb-2">Advanced Features Coming Soon</p>
+                  <p className="text-base text-gray-400 max-w-lg mx-auto leading-relaxed">
+                    Auto-optimization, thumbnail generation, and cache management features are being developed to help you manage your storage more efficiently.
+                  </p>
                 </div>
-
-                <button className="w-full p-3 bg-red-500/20 text-red-400 rounded-lg border border-red-500/30 hover:bg-red-500/30 transition-colors">
-                  Clear Cache (128 MB)
-                </button>
+                <div className="flex items-center justify-center gap-3 text-blue-400">
+                  <div className="w-3 h-3 bg-blue-400 rounded-full animate-pulse"></div>
+                  <span className="text-base font-medium">In Development</span>
+                  <div className="w-3 h-3 bg-blue-400 rounded-full animate-pulse animation-delay-300"></div>
+                </div>
               </div>
             </div>
           </div>
@@ -1080,15 +1217,14 @@ export default function DashboardModal({ isOpen, onClose }: DashboardModalProps)
                           </span>
                         </div>
                         <div className="flex gap-2">
-                          <button className="p-1.5 rounded-lg bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 transition-colors">
+                          <button 
+                            onClick={() => openUserProfile(user.id)}
+                            className="px-3 py-1.5 rounded-lg bg-purple-500/20 text-purple-400 hover:bg-purple-500/30 transition-colors text-sm font-medium flex items-center gap-2"
+                          >
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                             </svg>
-                          </button>
-                          <button className="p-1.5 rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors">
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                            </svg>
+                            Manage
                           </button>
                         </div>
                       </div>
@@ -1549,18 +1685,23 @@ export default function DashboardModal({ isOpen, onClose }: DashboardModalProps)
                       </span>
                     </PointerHighlight>
                   </div>
-                  <h2 className="text-4xl font-bold bg-gradient-to-r from-white via-purple-200 to-pink-200 bg-clip-text text-transparent">
-                    {isAdminMode && (
-                      <span className="relative">
-                        <span className="bg-gradient-to-r from-red-400 via-orange-400 to-red-500 bg-clip-text text-transparent font-black tracking-wider">
-                          ADMIN
+                  <div className="flex items-center gap-3">
+                    <h2 className="text-4xl font-bold bg-gradient-to-r from-white via-purple-200 to-pink-200 bg-clip-text text-transparent">
+                      {isAdminMode && (
+                        <span className="relative">
+                          <span className="bg-gradient-to-r from-red-400 via-orange-400 to-red-500 bg-clip-text text-transparent font-black tracking-wider">
+                            ADMIN
+                          </span>
+                          <span className="absolute -inset-1 bg-gradient-to-r from-red-500/20 to-orange-500/20 blur-lg rounded-lg"></span>
+                          <span className="text-white/80 mx-2">•</span>
                         </span>
-                        <span className="absolute -inset-1 bg-gradient-to-r from-red-500/20 to-orange-500/20 blur-lg rounded-lg"></span>
-                        <span className="text-white/80 mx-2">•</span>
-                      </span>
-                    )}
-                    Dashboard
-                  </h2>
+                      )}
+                      Dashboard
+                    </h2>
+                    <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-bold bg-gradient-to-r from-blue-500 text-white shadow-lg shadow-blue-500/25 border border-blue-400/30 animate-pulse">
+                      BETA
+                    </span>
+                  </div>
                 </div>
                 <p className="text-gray-400 text-sm mt-1">
                   {isAdminMode ? 'System Administration Panel' : 'Manage your uploads and view analytics'}
@@ -1886,6 +2027,14 @@ export default function DashboardModal({ isOpen, onClose }: DashboardModalProps)
               </motion.div>
             </motion.div>
           )}
+
+          {/* User Profile Modal */}
+          <UserProfileModal
+            isOpen={userProfileModal.isOpen}
+            onClose={closeUserProfile}
+            userId={userProfileModal.userId}
+            onUserUpdate={handleUserUpdate}
+          />
         </>
       )}
     </AnimatePresence>

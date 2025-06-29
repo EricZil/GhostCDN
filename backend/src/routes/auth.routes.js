@@ -2,6 +2,8 @@ const express = require('express');
 const bcrypt = require('bcrypt');
 const { v4: uuidv4 } = require('uuid');
 const prisma = require('../lib/prisma');
+const emailService = require('../services/email.service');
+const { checkEmailBan } = require('../middleware/ban.middleware');
 
 const router = express.Router();
 
@@ -37,6 +39,48 @@ router.post('/login', async (req, res) => {
       });
     }
 
+    // Check if user is banned
+    const activeBans = await prisma.userBan.findMany({
+      where: {
+        AND: [
+          {
+            OR: [
+              { userId: user.id },
+              { email }
+            ]
+          },
+          { isActive: true },
+          {
+            OR: [
+              { expiresAt: null }, // Permanent bans
+              { expiresAt: { gt: new Date() } } // Non-expired temporary bans
+            ]
+          }
+        ]
+      }
+    });
+
+    if (activeBans.length > 0) {
+      const ban = activeBans[0]; // Use the first active ban
+      return res.status(403).json({ 
+        success: false,
+        error: 'Account banned',
+        message: 'Your account has been banned. Please contact support.',
+        reason: ban.reason,
+        banType: ban.banType,
+        code: 'ACCOUNT_BANNED'
+      });
+    }
+
+    // Check if email is verified (only for password-based accounts)
+    if (user.password && !user.emailVerified) {
+      return res.status(403).json({ 
+        success: false, 
+        error: 'Please verify your email before signing in. Check your inbox for a verification link.',
+        code: 'EMAIL_NOT_VERIFIED'
+      });
+    }
+
     // Update last login time
     await prisma.user.update({
       where: { id: user.id },
@@ -60,7 +104,7 @@ router.post('/login', async (req, res) => {
 });
 
 // Registration endpoint
-router.post('/register', async (req, res) => {
+router.post('/register', checkEmailBan, async (req, res) => {
   try {
     const { name, email, password } = req.body;
 
@@ -89,8 +133,11 @@ router.post('/register', async (req, res) => {
 
     // Generate unique folder name for DigitalOcean Spaces
     const folderName = uuidv4();
+    
+    // Generate email verification token
+    const verificationToken = emailService.generateSecureToken();
 
-    // Create user
+    // Create user (not verified initially)
     const user = await prisma.user.create({
       data: {
         name,
@@ -98,6 +145,8 @@ router.post('/register', async (req, res) => {
         password: hashedPassword,
         r2FolderName: folderName,
         role: 'USER',
+        emailVerificationToken: verificationToken,
+        emailVerified: null, // Not verified yet
         createdAt: new Date(),
       }
     });
@@ -111,9 +160,18 @@ router.post('/register', async (req, res) => {
       // Don't fail registration if folder creation fails
     }
 
+    // Send verification email
+    try {
+      await emailService.sendVerificationEmail(email, name, verificationToken);
+    } catch (error) {
+      console.error("Error sending verification email:", error);
+      // Don't fail registration if email fails
+    }
+
     res.status(201).json({ 
       success: true, 
-      userId: user.id 
+      userId: user.id,
+      message: 'Registration successful! Please check your email to verify your account.'
     });
   } catch (error) {
     console.error('Registration error:', error);
@@ -141,6 +199,39 @@ router.post('/social-login', async (req, res) => {
       where: { email }
     });
 
+    // Check for bans before allowing social login
+    const activeBans = await prisma.userBan.findMany({
+      where: {
+        AND: [
+          {
+            OR: [
+              { userId: user?.id },
+              { email }
+            ]
+          },
+          { isActive: true },
+          {
+            OR: [
+              { expiresAt: null }, // Permanent bans
+              { expiresAt: { gt: new Date() } } // Non-expired temporary bans
+            ]
+          }
+        ]
+      }
+    });
+
+    if (activeBans.length > 0) {
+      const ban = activeBans[0];
+      return res.status(403).json({ 
+        success: false,
+        error: 'Account banned',
+        message: 'Your account has been banned. Please contact support.',
+        reason: ban.reason,
+        banType: ban.banType,
+        code: 'ACCOUNT_BANNED'
+      });
+    }
+
     if (!user) {
       // Create new user for social login
       const folderName = uuidv4();
@@ -152,6 +243,7 @@ router.post('/social-login', async (req, res) => {
           image,
           r2FolderName: folderName,
           role: 'USER',
+          emailVerified: new Date(), // Social logins are considered verified
           createdAt: new Date(),
           lastLogin: new Date()
         }
@@ -219,7 +311,8 @@ router.post('/social-login', async (req, res) => {
         email: user.email,
         role: user.role,
         image: user.image,
-        r2FolderName: user.r2FolderName
+        r2FolderName: user.r2FolderName,
+        lastLogin: user.lastLogin
       }
     });
   } catch (error) {
@@ -396,6 +489,257 @@ router.post('/test-jwt', async (req, res) => {
   }
 });
 
+// Email verification endpoint
+router.post('/verify-email', async (req, res) => {
+  try {
+    const { token } = req.body;
+
+    if (!token) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Verification token is required' 
+      });
+    }
+
+    // Find user with this verification token
+    const user = await prisma.user.findUnique({
+      where: { emailVerificationToken: token }
+    });
+
+    if (!user) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Invalid or expired verification token' 
+      });
+    }
+
+    if (user.emailVerified) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Email is already verified' 
+      });
+    }
+
+    // Verify the email
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        emailVerified: new Date(),
+        emailVerificationToken: null // Clear the token
+      }
+    });
+
+    // Send welcome email
+    try {
+      await emailService.sendWelcomeEmail(user.email, user.name);
+    } catch (error) {
+      console.error("Error sending welcome email:", error);
+      // Don't fail verification if welcome email fails
+    }
+
+    res.json({
+      success: true,
+      message: 'Email verified successfully! Welcome to GhostCDN.'
+    });
+  } catch (error) {
+    console.error('Email verification error:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Email verification failed' 
+    });
+  }
+});
+
+// Resend verification email endpoint
+router.post('/resend-verification', async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Email is required' 
+      });
+    }
+
+    // Find user
+    const user = await prisma.user.findUnique({
+      where: { email }
+    });
+
+    if (!user) {
+      return res.status(404).json({ 
+        success: false, 
+        error: 'User not found' 
+      });
+    }
+
+    if (user.emailVerified) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Email is already verified' 
+      });
+    }
+
+    // Rate limiting: Check if user has requested verification email recently (last 60 seconds)
+    const oneMinuteAgo = new Date(Date.now() - 60 * 1000);
+    if (user.updatedAt && user.updatedAt > oneMinuteAgo) {
+      return res.status(429).json({ 
+        success: false, 
+        error: 'Please wait a minute before requesting another verification email.' 
+      });
+    }
+
+    // Generate new verification token
+    const verificationToken = emailService.generateSecureToken();
+
+    // Update user with new token
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { emailVerificationToken: verificationToken }
+    });
+
+    // Send verification email
+    await emailService.sendVerificationEmail(user.email, user.name, verificationToken);
+
+    res.json({
+      success: true,
+      message: 'Verification email sent! Please check your inbox.'
+    });
+  } catch (error) {
+    console.error('Resend verification error:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to resend verification email' 
+    });
+  }
+});
+
+// Request password reset endpoint
+router.post('/forgot-password', async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Email is required' 
+      });
+    }
+
+    // Find user
+    const user = await prisma.user.findUnique({
+      where: { email }
+    });
+
+    if (!user) {
+      // Don't reveal if user exists for security
+      return res.json({
+        success: true,
+        message: 'If an account with that email exists, we sent a password reset link.'
+      });
+    }
+
+    // Don't allow password reset for social-only accounts
+    if (!user.password) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'This account uses social login. Please sign in with your social provider.' 
+      });
+    }
+
+    // Generate reset token (expires in 1 hour)
+    const resetToken = emailService.generateSecureToken();
+    const resetExpires = new Date(Date.now() + 60 * 60 * 1000); // 1 hour from now
+
+    // Update user with reset token
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        passwordResetToken: resetToken,
+        passwordResetExpires: resetExpires
+      }
+    });
+
+    // Send password reset email
+    await emailService.sendPasswordResetEmail(user.email, user.name, resetToken);
+
+    res.json({
+      success: true,
+      message: 'If an account with that email exists, we sent a password reset link.'
+    });
+  } catch (error) {
+    console.error('Forgot password error:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to process password reset request' 
+    });
+  }
+});
+
+// Reset password endpoint
+router.post('/reset-password', async (req, res) => {
+  try {
+    const { token, newPassword } = req.body;
+
+    if (!token || !newPassword) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Reset token and new password are required' 
+      });
+    }
+
+    // Validate password strength
+    if (newPassword.length < 6) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Password must be at least 6 characters long' 
+      });
+    }
+
+    // Find user with valid reset token
+    const user = await prisma.user.findFirst({
+      where: {
+        passwordResetToken: token,
+        passwordResetExpires: {
+          gt: new Date() // Token not expired
+        }
+      }
+    });
+
+    if (!user) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Invalid or expired reset token' 
+      });
+    }
+
+    // Hash new password
+    const hashedPassword = await bcrypt.hash(newPassword, 12);
+
+    // Update user password and clear reset token
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        password: hashedPassword,
+        passwordResetToken: null,
+        passwordResetExpires: null
+      }
+    });
+
+    res.json({
+      success: true,
+      message: 'Password reset successfully! You can now sign in with your new password.'
+    });
+  } catch (error) {
+    console.error('Reset password error:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Password reset failed' 
+    });
+  }
+});
+
 // Disconnect account endpoint
 router.post('/accounts/:userId/disconnect', async (req, res) => {
   try {
@@ -444,6 +788,159 @@ router.post('/accounts/:userId/disconnect', async (req, res) => {
     res.status(500).json({ 
       success: false, 
       error: 'Failed to disconnect account' 
+    });
+  }
+});
+
+// Ban check endpoint for session validation
+router.post('/check-ban', async (req, res) => {
+  try {
+    const { userId, email } = req.body;
+
+    if (!userId && !email) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'User ID or email is required' 
+      });
+    }
+
+    // Check for active bans
+    const activeBans = await prisma.userBan.findMany({
+      where: {
+        AND: [
+          {
+            OR: [
+              { userId },
+              { email }
+            ]
+          },
+          { isActive: true },
+          {
+            OR: [
+              { expiresAt: null }, // Permanent bans
+              { expiresAt: { gt: new Date() } } // Non-expired temporary bans
+            ]
+          }
+        ]
+      }
+    });
+
+    if (activeBans.length > 0) {
+      const ban = activeBans[0];
+      return res.json({
+        success: true,
+        banned: true,
+        banInfo: {
+          banType: ban.banType,
+          reason: ban.reason,
+          bannedAt: ban.bannedAt
+        }
+      });
+    }
+
+    res.json({
+      success: true,
+      banned: false
+    });
+  } catch (error) {
+    console.error('Ban check error:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Internal server error' 
+    });
+  }
+});
+
+// Comprehensive ban test endpoint for debugging
+router.post('/test-ban', async (req, res) => {
+  try {
+    const { userId, email } = req.body;
+
+    if (!userId && !email) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'User ID or email is required' 
+      });
+    }
+
+    // Get all bans for this user/email (active and inactive)
+    const allBans = await prisma.userBan.findMany({
+      where: {
+        OR: [
+          { userId },
+          { email }
+        ]
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    // Get active bans only
+    const activeBans = await prisma.userBan.findMany({
+      where: {
+        AND: [
+          {
+            OR: [
+              { userId },
+              { email }
+            ]
+          },
+          { isActive: true },
+          {
+            OR: [
+              { expiresAt: null }, // Permanent bans
+              { expiresAt: { gt: new Date() } } // Non-expired temporary bans
+            ]
+          }
+        ]
+      }
+    });
+
+    // Get user info
+    const user = userId ? await prisma.user.findUnique({
+      where: { id: userId },
+      select: { 
+        id: true, 
+        email: true, 
+        name: true, 
+        lastLogin: true,
+        emailVerified: true 
+      }
+    }) : null;
+
+    res.json({
+      success: true,
+      debug: {
+        userId,
+        email,
+        user,
+        totalBans: allBans.length,
+        activeBans: activeBans.length,
+        allBans: allBans.map(ban => ({
+          id: ban.id,
+          banType: ban.banType,
+          reason: ban.reason,
+          isActive: ban.isActive,
+          bannedAt: ban.bannedAt,
+          expiresAt: ban.expiresAt,
+          isExpired: ban.expiresAt ? ban.expiresAt <= new Date() : false
+        })),
+        activeBanDetails: activeBans.map(ban => ({
+          id: ban.id,
+          banType: ban.banType,
+          reason: ban.reason,
+          bannedAt: ban.bannedAt,
+          expiresAt: ban.expiresAt
+        })),
+        isBanned: activeBans.length > 0,
+        currentTime: new Date()
+      }
+    });
+  } catch (error) {
+    console.error('Ban test error:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Internal server error',
+      debug: error.message
     });
   }
 });

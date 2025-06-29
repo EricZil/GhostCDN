@@ -11,13 +11,23 @@ export default function AdminCachePerformance() {
     error: cacheError,
     refreshStats,
     clearAllCache,
-    clearSpecificCache
+    clearSpecificCache,
+    useCacheKeys,
+    useCacheKeyInfo
   } = useCacheStats();
   
   const { showNotification } = useNotification();
   const [isClearing, setIsClearing] = useState(false);
   const [showClearSpecificModal, setShowClearSpecificModal] = useState(false);
+  const [showKeysModal, setShowKeysModal] = useState(false);
+  const [showKeyDetailsModal, setShowKeyDetailsModal] = useState(false);
   const [specificKey, setSpecificKey] = useState('');
+  const [selectedKey, setSelectedKey] = useState('');
+  const [keyPattern, setKeyPattern] = useState('*');
+  
+  // Fetch cache keys when modal is open
+  const { data: cacheKeys, isLoading: keysLoading, refetch: refetchKeys } = useCacheKeys(keyPattern);
+  const { data: keyInfo, isLoading: keyInfoLoading } = useCacheKeyInfo(selectedKey);
 
   const handleRefreshStats = () => {
     refreshStats();
@@ -89,7 +99,31 @@ export default function AdminCachePerformance() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h3 className="text-2xl font-semibold text-white">Cache Performance</h3>
+        <div>
+          <h3 className="text-2xl font-semibold text-white">Cache Performance</h3>
+          {cacheStats && (
+            <div className="flex items-center gap-4 mt-2">
+              <div className="flex items-center gap-2">
+                <div className={`w-3 h-3 rounded-full ${
+                  cacheStats.redisHealthy ? 'bg-green-500' : 'bg-red-500'
+                }`}></div>
+                <span className="text-sm text-gray-400">
+                  {cacheStats.backend || cacheStats.type || 'Unknown Backend'}
+                </span>
+              </div>
+              {cacheStats.redisHealthy && (
+                <span className="text-xs px-2 py-1 bg-green-500/10 text-green-400 rounded-full border border-green-500/20">
+                  Redis Connected
+                </span>
+              )}
+              {!cacheStats.redisHealthy && cacheStats.fallbackAvailable && (
+                <span className="text-xs px-2 py-1 bg-yellow-500/10 text-yellow-400 rounded-full border border-yellow-500/20">
+                  Fallback Mode
+                </span>
+              )}
+            </div>
+          )}
+        </div>
         <div className="flex gap-2">
           <button 
             onClick={handleRefreshStats}
@@ -98,6 +132,14 @@ export default function AdminCachePerformance() {
           >
             {cacheLoading ? 'Refreshing...' : 'Refresh Stats'}
           </button>
+          {cacheStats?.redisHealthy && (
+            <button 
+              onClick={() => setShowKeysModal(true)}
+              className="px-4 py-2 bg-blue-500/20 text-blue-400 rounded-lg border border-blue-500/30 hover:bg-blue-500/30 transition-colors"
+            >
+              View Keys
+            </button>
+          )}
           <button 
             onClick={handleClearAllCache}
             disabled={isClearing}
@@ -272,16 +314,27 @@ export default function AdminCachePerformance() {
       {/* Cache Management Actions */}
       <div className="bg-[rgba(20,20,35,0.6)] rounded-xl p-6 border border-gray-800/40">
         <h4 className="text-lg font-semibold text-white mb-4">Cache Management</h4>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <button 
             onClick={handleRefreshStats}
             disabled={cacheLoading}
             className="p-4 bg-blue-500/20 text-blue-400 rounded-lg border border-blue-500/30 hover:bg-blue-500/30 transition-colors text-left disabled:opacity-50"
           >
             <div className="text-2xl mb-2">🔄</div>
-            <p className="font-medium mb-1">Refresh Cache</p>
+            <p className="font-medium mb-1">Refresh Stats</p>
             <p className="text-sm text-blue-300">Update cache statistics</p>
           </button>
+          
+          {cacheStats?.redisHealthy && (
+            <button 
+              onClick={() => setShowKeysModal(true)}
+              className="p-4 bg-purple-500/20 text-purple-400 rounded-lg border border-purple-500/30 hover:bg-purple-500/30 transition-colors text-left"
+            >
+              <div className="text-2xl mb-2">🔍</div>
+              <p className="font-medium mb-1">Browse Keys</p>
+              <p className="text-sm text-purple-300">View and manage Redis keys</p>
+            </button>
+          )}
           
           <button 
             onClick={() => setShowClearSpecificModal(true)}
@@ -388,6 +441,249 @@ export default function AdminCachePerformance() {
                 >
                   Clear Key
                 </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Redis Keys Browser Modal */}
+      {showKeysModal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[70] flex items-center justify-center p-4">
+          <div className="bg-gradient-to-br from-gray-900/95 via-purple-900/20 to-gray-900/95 backdrop-blur-xl rounded-2xl border border-purple-500/30 shadow-2xl max-w-4xl w-full mx-4 max-h-[80vh] overflow-hidden">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-full bg-purple-500/20 border border-purple-500/30 flex items-center justify-center">
+                    <svg className="w-6 h-6 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+                    </svg>
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-semibold text-white">Redis Keys Browser</h3>
+                    <p className="text-sm text-gray-400">View and manage cache keys</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowKeysModal(false)}
+                  className="text-gray-400 hover:text-white transition-colors"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              
+              {/* Search Pattern */}
+              <div className="mb-4">
+                <label className="block text-sm text-gray-300 mb-2">Search Pattern</label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={keyPattern}
+                    onChange={(e) => setKeyPattern(e.target.value)}
+                    placeholder="* (all keys) or public-* (specific pattern)"
+                    className="flex-1 px-3 py-2 bg-black/50 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-purple-500 placeholder-gray-400"
+                  />
+                  <button
+                    onClick={() => refetchKeys()}
+                    disabled={keysLoading}
+                    className="px-4 py-2 bg-purple-500/20 text-purple-400 rounded-lg border border-purple-500/30 hover:bg-purple-500/30 transition-colors disabled:opacity-50"
+                  >
+                    {keysLoading ? 'Searching...' : 'Search'}
+                  </button>
+                </div>
+              </div>
+              
+              {/* Keys List */}
+              <div className="bg-black/30 rounded-lg border border-gray-800/50 max-h-96 overflow-y-auto">
+                {keysLoading ? (
+                  <div className="p-8 text-center">
+                    <div className="w-8 h-8 border-2 border-purple-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+                    <p className="text-gray-400">Loading cache keys...</p>
+                  </div>
+                ) : cacheKeys && cacheKeys.length > 0 ? (
+                  <div className="divide-y divide-gray-800/50">
+                    {cacheKeys.map((key, index) => (
+                      <div key={index} className="p-4 hover:bg-gray-800/30 transition-colors">
+                        <div className="flex items-center justify-between">
+                          <div className="flex-1 min-w-0">
+                            <p className="text-white font-mono text-sm truncate">{key}</p>
+                            <p className="text-xs text-gray-400 mt-1">
+                              {key.startsWith('public-') ? 'Public Cache' : 
+                               key.includes('system') ? 'System Cache' : 'Application Cache'}
+                            </p>
+                          </div>
+                          <div className="flex gap-2 ml-4">
+                            <button
+                              onClick={() => {
+                                setSelectedKey(key);
+                                setShowKeyDetailsModal(true);
+                              }}
+                              className="px-3 py-1 text-xs bg-blue-500/20 text-blue-400 rounded border border-blue-500/30 hover:bg-blue-500/30 transition-colors"
+                            >
+                              Details
+                            </button>
+                            <button
+                              onClick={async () => {
+                                if (confirm(`Are you sure you want to clear the cache key "${key}"?`)) {
+                                  try {
+                                    await clearSpecificCache(key);
+                                    refetchKeys();
+                                    showNotification({
+                                      type: 'success',
+                                      title: 'Key Cleared',
+                                      message: `Cache key "${key}" has been cleared`,
+                                      duration: 4000
+                                    });
+                                  } catch (error) {
+                                    showNotification({
+                                      type: 'error',
+                                      title: 'Clear Failed',
+                                      message: error instanceof Error ? error.message : 'Failed to clear key',
+                                      duration: 6000
+                                    });
+                                  }
+                                }
+                              }}
+                              className="px-3 py-1 text-xs bg-red-500/20 text-red-400 rounded border border-red-500/30 hover:bg-red-500/30 transition-colors"
+                            >
+                              Clear
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="p-8 text-center">
+                    <p className="text-gray-400">No cache keys found matching pattern: {keyPattern}</p>
+                  </div>
+                )}
+              </div>
+              
+              <div className="flex justify-between items-center mt-4 text-sm text-gray-400">
+                <span>{cacheKeys?.length || 0} keys found</span>
+                <button
+                  onClick={() => setShowKeysModal(false)}
+                  className="px-4 py-2 bg-gray-700/50 hover:bg-gray-700/70 text-gray-300 hover:text-white rounded-lg border border-gray-600/50 transition-all duration-200 font-medium"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Key Details Modal */}
+      {showKeyDetailsModal && selectedKey && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[80] flex items-center justify-center p-4">
+          <div className="bg-gradient-to-br from-gray-900/95 via-blue-900/20 to-gray-900/95 backdrop-blur-xl rounded-2xl border border-blue-500/30 shadow-2xl max-w-2xl w-full mx-4">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-full bg-blue-500/20 border border-blue-500/30 flex items-center justify-center">
+                    <svg className="w-6 h-6 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-semibold text-white">Cache Key Details</h3>
+                    <p className="text-sm text-gray-400 font-mono">{selectedKey}</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    setShowKeyDetailsModal(false);
+                    setSelectedKey('');
+                  }}
+                  className="text-gray-400 hover:text-white transition-colors"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              
+              {keyInfoLoading ? (
+                <div className="p-8 text-center">
+                  <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+                  <p className="text-gray-400">Loading key details...</p>
+                </div>
+              ) : keyInfo ? (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="bg-black/30 rounded-lg p-4 border border-gray-800/50">
+                      <p className="text-sm text-gray-400 mb-1">Status</p>
+                      <p className={`font-semibold ${keyInfo.exists ? 'text-green-400' : 'text-red-400'}`}>
+                        {keyInfo.exists ? 'Exists' : 'Not Found'}
+                      </p>
+                    </div>
+                    <div className="bg-black/30 rounded-lg p-4 border border-gray-800/50">
+                      <p className="text-sm text-gray-400 mb-1">TTL</p>
+                      <p className="text-white font-semibold">
+                        {keyInfo.ttl > 0 ? `${keyInfo.ttl}s` : keyInfo.ttl === -1 ? 'No expiry' : 'Expired'}
+                      </p>
+                    </div>
+                    <div className="bg-black/30 rounded-lg p-4 border border-gray-800/50">
+                      <p className="text-sm text-gray-400 mb-1">Human TTL</p>
+                      <p className="text-white font-semibold">{keyInfo.ttlHuman}</p>
+                    </div>
+                  </div>
+                  
+                  {keyInfo.error && (
+                    <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-4">
+                      <p className="text-red-400 text-sm">{keyInfo.error}</p>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="p-8 text-center">
+                  <p className="text-gray-400">Unable to load key details</p>
+                </div>
+              )}
+              
+              <div className="flex gap-3 mt-6">
+                <button
+                  onClick={() => {
+                    setShowKeyDetailsModal(false);
+                    setSelectedKey('');
+                  }}
+                  className="flex-1 px-4 py-2.5 bg-gray-700/50 hover:bg-gray-700/70 text-gray-300 hover:text-white rounded-lg border border-gray-600/50 transition-all duration-200 font-medium"
+                >
+                  Close
+                </button>
+                {keyInfo?.exists && (
+                  <button
+                    onClick={async () => {
+                      if (confirm(`Are you sure you want to clear the cache key "${selectedKey}"?`)) {
+                        try {
+                          await clearSpecificCache(selectedKey);
+                          setShowKeyDetailsModal(false);
+                          setSelectedKey('');
+                          refetchKeys();
+                          showNotification({
+                            type: 'success',
+                            title: 'Key Cleared',
+                            message: `Cache key "${selectedKey}" has been cleared`,
+                            duration: 4000
+                          });
+                        } catch (error) {
+                          showNotification({
+                            type: 'error',
+                            title: 'Clear Failed',
+                            message: error instanceof Error ? error.message : 'Failed to clear key',
+                            duration: 6000
+                          });
+                        }
+                      }
+                    }}
+                    className="px-4 py-2.5 bg-red-500/80 hover:bg-red-500 text-white rounded-lg border border-red-500/50 transition-all duration-200 font-medium shadow-lg hover:shadow-red-500/25"
+                  >
+                    Clear Key
+                  </button>
+                )}
               </div>
             </div>
           </div>

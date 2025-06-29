@@ -60,13 +60,8 @@ export async function GET(request: NextRequest) {
     // Check if response is JSON before parsing
     const contentType = response.headers.get('content-type');
     if (!contentType || !contentType.includes('application/json')) {
-      const text = await response.text();
-      console.error('Non-JSON response from backend:', {
-        url: backendUrl,
-        status: response.status,
-        contentType,
-        body: text.substring(0, 500) // Log first 500 chars
-      });
+      await response.text();
+      // Non-JSON response from backend
       return NextResponse.json(
         { success: false, message: `Backend returned non-JSON response: ${response.status}` },
         { status: 502 }
@@ -77,7 +72,7 @@ export async function GET(request: NextRequest) {
     
     return NextResponse.json(data, { status: response.status });
   } catch (error) {
-    console.error('Dashboard API error:', error);
+    // Dashboard API error handled
     return NextResponse.json(
       { success: false, message: 'Internal server error', error: error instanceof Error ? error.message : 'Unknown error' },
       { status: 500 }
@@ -132,7 +127,7 @@ export async function POST(request: NextRequest) {
     
     return NextResponse.json(data, { status: response.status });
   } catch (error) {
-    console.error('Dashboard API error:', error);
+    // Dashboard API error handled
     return NextResponse.json(
       { success: false, message: 'Internal server error', error: error instanceof Error ? error.message : 'Unknown error' },
       { status: 500 }

@@ -274,8 +274,8 @@ export async function optimizeImageFile(
       optimizedFile,
       stats: result
     };
-  } catch (error) {
-    console.warn('Client-side optimization failed:', error);
+      } catch {
+      // Client-side optimization failed
     return null; // Fallback to original file
   }
 } 

@@ -13,6 +13,7 @@ export default function RegisterForm() {
   const [isLoading, setIsLoading] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
   const [error, setError] = useState('');
+  const [isResendingVerification, setIsResendingVerification] = useState(false);
   const { register } = useAuth();
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -35,6 +36,27 @@ export default function RegisterForm() {
   };
 
   const passwordsMatch = password === confirmPassword || confirmPassword === '';
+
+  const handleResendVerification = async () => {
+    setIsResendingVerification(true);
+    try {
+      const response = await fetch('/api/auth/resend-verification', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to resend verification email');
+      }
+    } catch {
+      // Error handled silently
+    } finally {
+      setIsResendingVerification(false);
+    }
+  };
 
   return (
     <div className="relative">
@@ -82,10 +104,43 @@ export default function RegisterForm() {
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.4 }}
-              className="text-gray-300"
+              className="text-gray-300 text-center mb-4"
             >
-              Logging you in...
+              Please check your email to verify your account before signing in.
             </motion.p>
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.5 }}
+              className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-4"
+            >
+              <div className="flex items-center text-blue-400 text-sm">
+                <svg className="w-5 h-5 mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 4.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                </svg>
+                                 <span>We&apos;ve sent a verification email to <strong>{email}</strong></span>
+               </div>
+             </motion.div>
+             <motion.div
+               initial={{ opacity: 0, y: 10 }}
+               animate={{ opacity: 1, y: 0 }}
+               transition={{ delay: 0.6 }}
+               className="flex flex-col gap-3 mt-6"
+             >
+               <button
+                 onClick={handleResendVerification}
+                 disabled={isResendingVerification}
+                 className="w-full py-2 px-4 border border-gray-600 rounded-lg text-sm font-medium text-gray-300 hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
+               >
+                 {isResendingVerification ? 'Resending...' : 'Resend Verification Email'}
+               </button>
+               <button
+                 onClick={() => setIsSuccess(false)}
+                 className="w-full py-2 px-4 text-sm font-medium text-purple-400 hover:text-purple-300 transition-all duration-200"
+               >
+                 ← Back to Sign In
+               </button>
+             </motion.div>
           </motion.div>
         ) : (
           <motion.form
@@ -118,7 +173,7 @@ export default function RegisterForm() {
                 required
                 disabled={isLoading}
                 className="w-full px-4 py-3 bg-black/50 border border-gray-800 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent text-white placeholder-gray-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                placeholder="Enter your your name"
+                placeholder="Enter your name"
               />
             </div>
 

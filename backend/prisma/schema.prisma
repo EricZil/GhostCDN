@@ -1,9 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -13,7 +7,6 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// NextAuth.js Models
 model Account {
   id                String  @id @default(cuid())
   userId            String
@@ -44,23 +37,32 @@ model Session {
 }
 
 model User {
-  id            String          @id @default(cuid())
-  name          String
-  email         String          @unique
-  password      String?
-  emailVerified DateTime?
-  image         String?
-  role          Role            @default(USER)
-  createdAt     DateTime        @default(now())
-  lastLogin     DateTime?
-  r2FolderName  String?         @unique
-  accounts      Account[]
-  activities    Activity[]
-  analytics     Analytics[]
-  images        Image[]
-  sessions      Session[]
-  systemLogs    SystemLog[]
-  systemMessages SystemMessage[]
+  id                     String          @id @default(cuid())
+  name                   String
+  email                  String          @unique
+  password               String?
+  emailVerified          DateTime?
+  emailVerificationToken String?         @unique
+  passwordResetToken     String?         @unique
+  passwordResetExpires   DateTime?
+  image                  String?
+  role                   Role            @default(USER)
+  createdAt              DateTime        @default(now())
+  lastLogin              DateTime?
+  r2FolderName           String?         @unique
+  accounts               Account[]
+  activities             Activity[]
+  analytics              Analytics[]
+  images                 Image[]
+  sessions               Session[]
+  systemLogs             SystemLog[]
+  systemMessages         SystemMessage[]
+  bans                   UserBan[]
+  bansByUser             UserBan[]       @relation("BannedByUser")
+  unbansByUser           UserBan[]       @relation("UnbannedByUser")
+
+  @@index([emailVerificationToken])
+  @@index([passwordResetToken])
 }
 
 model VerificationToken {
@@ -71,7 +73,6 @@ model VerificationToken {
   @@unique([identifier, token])
 }
 
-// Custom Models
 model Image {
   id         String      @id @default(cuid())
   fileName   String
@@ -90,7 +91,6 @@ model Image {
   @@index([uploadedAt])
 }
 
-// Analytics tracking for files
 model Analytics {
   id        String         @id @default(cuid())
   imageId   String
@@ -110,17 +110,16 @@ model Analytics {
   @@index([createdAt])
 }
 
-// User activity log
 model Activity {
   id              String       @id @default(cuid())
   userId          String
   type            ActivityType
   message         String
-  metadata        Json?
+  metadata        String?      @db.LongText
   ipAddress       String?
   userAgent       String?
-  isAdminActivity Boolean      @default(false)
   createdAt       DateTime     @default(now())
+  isAdminActivity Boolean      @default(false)
   user            User         @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
@@ -129,31 +128,29 @@ model Activity {
   @@index([isAdminActivity])
 }
 
-// System health monitoring
 model SystemHealth {
-  id          String   @id @default(cuid())
-  service     String   @unique
-  status      String   // 'healthy', 'degraded', 'down'
-  uptime      Float    // percentage
-  lastCheck   DateTime @default(now())
-  responseTime Int?    // in milliseconds
-  metadata    Json?
+  id           String   @id @default(cuid())
+  service      String   @unique
+  status       String
+  uptime       Float
+  lastCheck    DateTime @default(now())
+  responseTime Int?
+  metadata     String?  @db.LongText
 
   @@index([service])
   @@index([lastCheck])
 }
 
-// System logs for admin monitoring
 model SystemLog {
   id        String   @id @default(cuid())
   level     LogLevel
   message   String
-  source    String   // e.g., 'api', 'database', 'storage', 'auth'
+  source    String
   userId    String?
   ipAddress String?
-  metadata  Json?
+  metadata  String?  @db.LongText
   createdAt DateTime @default(now())
-  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  user      User?    @relation(fields: [userId], references: [id])
 
   @@index([level])
   @@index([source])
@@ -161,54 +158,77 @@ model SystemLog {
   @@index([userId])
 }
 
-// System settings
 model SystemSettings {
-  id                String   @id @default(cuid())
-  key               String   @unique
-  value             String
-  description       String?
-  updatedAt         DateTime @updatedAt
-  updatedBy         String?
+  id          String   @id @default(cuid())
+  key         String   @unique
+  value       String
+  description String?
+  updatedAt   DateTime @updatedAt
+  updatedBy   String?
 
   @@index([key])
 }
 
-// System announcements/messages for main page
 model SystemMessage {
-  id        String   @id @default(cuid())
+  id        String      @id @default(cuid())
   title     String
-  content   String   @db.Text
+  content   String      @db.Text
   type      MessageType
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  isActive  Boolean     @default(true)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
   createdBy String
-  user      User     @relation(fields: [createdBy], references: [id], onDelete: Cascade)
+  user      User        @relation(fields: [createdBy], references: [id], onDelete: Cascade)
 
   @@index([isActive])
   @@index([createdAt])
+  @@index([createdBy], map: "SystemMessage_createdBy_fkey")
 }
 
-// Guest uploads tracking for automatic cleanup
 model GuestUpload {
-  id           String   @id @default(cuid())
-  fileKey      String   @unique
-  fileName     String
-  fileSize     Int
-  fileType     String
-  mimeType     String?
-  width        Int?
-  height       Int?
-  uploadedAt   DateTime @default(now())
-  expiresAt    DateTime // Automatically set to uploadedAt + 14 days
-  ipAddress    String?
-  userAgent    String?
-  isDeleted    Boolean  @default(false)
-  deletedAt    DateTime?
+  id         String    @id @default(cuid())
+  fileKey    String    @unique
+  fileName   String
+  fileSize   Int
+  fileType   String
+  mimeType   String?
+  width      Int?
+  height     Int?
+  uploadedAt DateTime  @default(now())
+  expiresAt  DateTime
+  ipAddress  String?
+  userAgent  String?
+  isDeleted  Boolean   @default(false)
+  deletedAt  DateTime?
 
   @@index([expiresAt])
   @@index([isDeleted])
   @@index([uploadedAt])
+}
+
+model UserBan {
+  id          String    @id @default(cuid())
+  userId      String?
+  email       String?
+  ipAddresses String?   @db.LongText // JSON array of IP addresses
+  banType     BanType
+  reason      String?   @db.Text
+  isActive    Boolean   @default(true)
+  bannedAt    DateTime  @default(now())
+  bannedBy    String
+  unbannedAt  DateTime?
+  unbannedBy  String?
+  expiresAt   DateTime? // For temporary bans
+  metadata    String?   @db.LongText // Additional ban info
+  user        User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  bannedByUser User     @relation("BannedByUser", fields: [bannedBy], references: [id])
+  unbannedByUser User?  @relation("UnbannedByUser", fields: [unbannedBy], references: [id])
+
+  @@index([userId])
+  @@index([email])
+  @@index([isActive])
+  @@index([bannedAt])
+  @@index([expiresAt])
 }
 
 enum Role {
@@ -244,7 +264,14 @@ enum LogLevel {
 }
 
 enum MessageType {
-  CRITICAL    // Red - Critical announcements, maintenance, outages
-  WARNING     // Yellow - Important notices, updates, deprecations  
-  INFO        // Blue - General information, new features, tips
-} 
+  CRITICAL
+  WARNING
+  INFO
+}
+
+enum BanType {
+  ACCOUNT
+  EMAIL
+  IP
+  FULL
+}

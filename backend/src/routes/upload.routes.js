@@ -1,8 +1,12 @@
 const express = require('express');
 const path = require('path');
 const uploadController = require('../controllers/upload.controller');
+const { checkAllBans } = require('../middleware/ban.middleware');
 
 const router = express.Router();
+
+// Apply ban checking to all upload routes
+router.use(checkAllBans);
 
 // Extract token from form data middleware
 const extractToken = (req, res, next) => {

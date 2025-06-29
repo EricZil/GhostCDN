@@ -30,12 +30,19 @@ export const authOptions: AuthOptions = {
             })
           });
 
-          if (!response.ok) {
-            return null;
-          }
-
           const userData = await response.json();
           
+          if (!response.ok) {
+            // Handle different types of errors with specific messages
+            if (userData.code === 'ACCOUNT_BANNED') {
+              throw new Error(`Account Banned: ${userData.message}${userData.reason ? ` Reason: ${userData.reason}` : ''}`);
+            } else if (userData.code === 'EMAIL_NOT_VERIFIED') {
+              throw new Error(userData.error);
+            } else {
+              throw new Error(userData.error || 'Authentication failed');
+            }
+          }
+
           if (userData.success && userData.user) {
             return {
               id: userData.user.id,
@@ -44,11 +51,15 @@ export const authOptions: AuthOptions = {
               role: userData.user.role,
               image: userData.user.image,
               r2FolderName: userData.user.r2FolderName || undefined,
+              lastLogin: userData.user.lastLogin,
             };
           }
           
-          return null;
-        } catch {
+          throw new Error('Authentication failed');
+        } catch (error) {
+          if (error instanceof Error) {
+            throw error;
+          }
           return null;
         }
       }
@@ -93,7 +104,13 @@ export const authOptions: AuthOptions = {
               user.id = userData.user.id;
               user.role = userData.user.role;
               user.r2FolderName = userData.user.r2FolderName;
+              user.lastLogin = userData.user.lastLogin;
               return true;
+            }
+          } else {
+            const errorData = await response.json();
+            if (errorData.code === 'ACCOUNT_BANNED') {
+              throw new Error(`Account Banned: ${errorData.message}`);
             }
           }
           
@@ -111,8 +128,9 @@ export const authOptions: AuthOptions = {
         token.id = user.id;
         token.role = user.role;
         token.r2FolderName = user.r2FolderName;
+        token.lastLogin = user.lastLogin;
       } 
-      // For existing sessions, fetch user data from backend if not already present
+      // For existing sessions, only fetch user data if missing critical info
       else if (token.sub && (!token.role || !token.r2FolderName)) {
         try {
           const response = await fetch(`${process.env.API_URL}/auth/user/${token.sub}`, {
@@ -127,6 +145,7 @@ export const authOptions: AuthOptions = {
               token.id = userData.user.id;
               token.role = userData.user.role;
               token.r2FolderName = userData.user.r2FolderName || undefined;
+              token.lastLogin = userData.user.lastLogin;
             }
           }
         } catch {
@@ -140,6 +159,7 @@ export const authOptions: AuthOptions = {
         session.user.id = token.id as string;
         session.user.role = token.role;
         session.user.r2FolderName = token.r2FolderName;
+        session.user.lastLogin = token.lastLogin;
       }
       return session;
     }

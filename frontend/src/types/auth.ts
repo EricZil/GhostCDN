@@ -8,4 +8,5 @@ export interface User {
   role: Role;
   image?: string | null;
   r2FolderName?: string;
+  lastLogin?: string | null;
 } 
