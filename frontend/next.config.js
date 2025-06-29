@@ -17,7 +17,7 @@ const nextConfig = {
       },
       {
         protocol: 'https',
-        hostname: 'cdn.ghostcdn.xyz',
+        hostname: 'cdn.gcdn.space',
         pathname: '/**',
       },
       {

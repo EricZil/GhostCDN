@@ -36,7 +36,7 @@ export default function ImageViewer() {
         
         // For now, we'll just construct the URL from the fileKey
         // In the future, you might want to fetch metadata from the server
-        const baseUrl = process.env.NEXT_PUBLIC_CDN_URL || 'https://cdn.ghostcdn.xyz';
+        const baseUrl = process.env.NEXT_PUBLIC_CDN_URL || 'https://cdn.gcdn.space';
         
 
         
