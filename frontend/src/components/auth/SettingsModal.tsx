@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSession, signIn } from 'next-auth/react';
-import { getGravatarUrl, checkGravatarExists } from '@/utils/gravatar';
+import { getGravatarUrl, checkGravatarExists, getSmartGravatarUrl } from '@/utils/gravatar';
 import { useNotification } from '@/contexts/NotificationContext';
 import { useDashboard } from '@/hooks/useDashboard';
 import Image from 'next/image';
@@ -39,20 +39,28 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     const initializeAvatar = async () => {
       if (!session?.user?.email) return;
 
-      // Check if user has a Gravatar
+      // If user already has an image (from social login), use that
+      if (session.user.image) {
+        setAvatarUrl(session.user.image);
+        setHasGravatar(false); // It's not a Gravatar, it's a social login image
+        return;
+      }
+
+      // Check if user has a Gravatar (with caching)
       const gravatarExists = await checkGravatarExists(session.user.email);
       setHasGravatar(gravatarExists);
       
-      // Use Gravatar if available, otherwise show fallback
+      // Always set an avatar URL - either real Gravatar or identicon fallback
       if (gravatarExists) {
         setAvatarUrl(getGravatarUrl(session.user.email));
       } else {
-        setAvatarUrl(null);
+        // Use smart Gravatar URL that provides identicon fallback
+        setAvatarUrl(getSmartGravatarUrl(session.user.email));
       }
     };
 
     initializeAvatar();
-  }, [session?.user?.email]);
+  }, [session?.user?.email, session?.user?.image]);
 
   // Fetch connected accounts
   useEffect(() => {
@@ -383,7 +391,7 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                                     height={128}
                                     className="w-full h-full object-cover"
                                     onError={() => {
-                                      // Gravatar failed, use initials
+                                      // If image fails to load, fallback to initials
                                       setAvatarUrl(null);
                                     }}
                                   />
@@ -397,21 +405,24 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                             <div>
                               <div className="space-y-3">
                                 {/* Avatar source info */}
-                                {hasGravatar && avatarUrl ? (
-                                  <p className="text-sm text-blue-400">📷 This picture is from your Gravatar account</p>
+                                {session?.user?.image ? (
+                                  <p className="text-sm text-blue-400">📷 Profile picture from your social account</p>
+                                ) : hasGravatar && avatarUrl ? (
+                                  <p className="text-sm text-blue-400">📷 Profile picture from your Gravatar account</p>
                                 ) : (
-                                  <p className="text-sm text-gray-400">Using default avatar</p>
+                                  <p className="text-sm text-gray-400">Using generated avatar</p>
                                 )}
                                 
-                                {/* Gravatar info */}
-                                {hasGravatar && (
+                                {/* Profile picture source help */}
+                                {session?.user?.image ? (
+                                  <div className="text-xs text-gray-500">
+                                    <p>This image comes from your connected social account. To change it, update your profile on that platform.</p>
+                                  </div>
+                                ) : hasGravatar ? (
                                   <div className="text-xs text-gray-500">
                                     <p>Want to change your Gravatar? Visit <a href="https://gravatar.com" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300">gravatar.com</a></p>
                                   </div>
-                                )}
-                                
-                                {/* No Gravatar info */}
-                                {!hasGravatar && (
+                                ) : (
                                   <div className="text-xs text-gray-500">
                                     <p>Get a profile picture across the web! <a href="https://gravatar.com" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300">Create a Gravatar</a></p>
                                   </div>

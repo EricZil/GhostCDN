@@ -25,6 +25,11 @@ interface Upload {
   height?: number;
   uploadedAt: string;
   viewCount: number;
+  thumbnails?: {
+    small: string;
+    medium: string;
+    large: string;
+  } | null;
 }
 
 interface Activity {

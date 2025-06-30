@@ -18,6 +18,7 @@ import BulkActions from '@/components/dashboard/BulkActions';
 import AdminOverview from '@/components/dashboard/admin/AdminOverview';
 import AdminCachePerformance from '@/components/dashboard/admin/AdminCachePerformance';
 import UserProfileModal from '@/components/dashboard/admin/UserProfileModal';
+import ThumbnailLinks from '@/components/upload/ThumbnailLinks';
 
 interface DashboardModalProps {
   isOpen: boolean;
@@ -95,6 +96,8 @@ export default function DashboardModal({ isOpen, onClose }: DashboardModalProps)
     fileName: string;
   }>({ isOpen: false, fileId: '', fileName: '' });
   const [copiedFileId, setCopiedFileId] = useState<string | null>(null);
+  const [expandedFileId, setExpandedFileId] = useState<string | null>(null);
+  const [copiedThumbnail, setCopiedThumbnail] = useState<string | false>(false);
   
   // Dashboard hook
   const {
@@ -465,6 +468,18 @@ export default function DashboardModal({ isOpen, onClose }: DashboardModalProps)
     }
   };
 
+  // Copy thumbnail link handler
+  const copyThumbnailToClipboard = (text: string, type: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedThumbnail(type);
+    setTimeout(() => setCopiedThumbnail(false), 2000);
+  };
+
+  // Toggle file expansion
+  const toggleFileExpansion = (fileId: string) => {
+    setExpandedFileId(expandedFileId === fileId ? null : fileId);
+  };
+
   if (!isOpen) return null;
 
   // Define tabs based on admin mode
@@ -734,8 +749,27 @@ export default function DashboardModal({ isOpen, onClose }: DashboardModalProps)
                             )}
                           </button>
 
-                          <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-500/20 to-purple-500/20 border border-blue-500/30 flex items-center justify-center">
-                            <span className="text-sm">📷</span>
+                          {/* File thumbnail or icon */}
+                          <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-500/20 to-purple-500/20 border border-blue-500/30 flex items-center justify-center overflow-hidden">
+                            {file.thumbnails?.small ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img 
+                                src={file.thumbnails.small} 
+                                alt={file.fileName}
+                                className="w-full h-full object-cover rounded-md"
+                                onError={(e) => {
+                                  // Fallback to icon if thumbnail fails to load
+                                  const target = e.target as HTMLImageElement;
+                                  target.style.display = 'none';
+                                  const parent = target.parentElement;
+                                  if (parent) {
+                                    parent.innerHTML = '<span class="text-sm">📷</span>';
+                                  }
+                                }}
+                              />
+                            ) : (
+                              <span className="text-sm">📷</span>
+                            )}
                           </div>
                           <div>
                             <p className="text-sm font-medium text-white truncate max-w-[200px]">{file.fileName}</p>
@@ -747,6 +781,28 @@ export default function DashboardModal({ isOpen, onClose }: DashboardModalProps)
                             <p className="text-sm text-white">{file.viewCount} views</p>
                           </div>
                           <div className="flex items-center gap-3">
+                            {/* Thumbnail Button (show only if thumbnails exist) */}
+                            {file.thumbnails && (
+                              <button 
+                                onClick={() => toggleFileExpansion(file.id)}
+                                className={`group relative px-3 py-2 rounded-xl border transition-all duration-300 transform hover:scale-105 active:scale-95 ${
+                                  expandedFileId === file.id
+                                    ? 'bg-gradient-to-r from-purple-500/30 to-indigo-500/30 border-purple-400/50 text-purple-300 shadow-lg shadow-purple-500/20'
+                                    : 'bg-gradient-to-r from-purple-500/10 to-indigo-500/10 border-purple-400/30 text-purple-300 hover:from-purple-500/20 hover:to-indigo-500/20 hover:border-purple-400/50 hover:shadow-lg hover:shadow-purple-500/20'
+                                }`}
+                                title={expandedFileId === file.id ? "Hide thumbnails" : "Show thumbnails"}
+                              >
+                                <div className="flex items-center gap-2">
+                                  <svg className={`w-4 h-4 transition-transform duration-200 ${expandedFileId === file.id ? 'rotate-180' : 'group-hover:scale-110'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                  </svg>
+                                  <span className="text-xs font-medium">
+                                    {expandedFileId === file.id ? 'Hide' : 'Thumbs'}
+                                  </span>
+                                </div>
+                              </button>
+                            )}
+
                             {/* Enhanced Copy Button */}
                             <button 
                               onClick={() => handleCopyLink(file.fileKey, file.id)}
@@ -791,6 +847,24 @@ export default function DashboardModal({ isOpen, onClose }: DashboardModalProps)
                             </button>
                           </div>
                         </div>
+
+                        {/* Thumbnail Links Expansion */}
+                        <AnimatePresence>
+                          {expandedFileId === file.id && file.thumbnails && (
+                            <motion.div
+                              initial={{ opacity: 0, height: 0 }}
+                              animate={{ opacity: 1, height: 'auto' }}
+                              exit={{ opacity: 0, height: 0 }}
+                              className="mt-6 pt-6 border-t border-gray-800/40"
+                            >
+                              <ThumbnailLinks 
+                                thumbnails={file.thumbnails}
+                                copied={copiedThumbnail}
+                                copyToClipboard={copyThumbnailToClipboard}
+                              />
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
                       </div>
                     </div>
                   );

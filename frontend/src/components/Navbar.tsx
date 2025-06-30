@@ -5,7 +5,7 @@ import Link from "next/link";
 import SettingsModal from "./auth/SettingsModal";
 import DashboardModal from "./DashboardModal";
 import { useAuth } from "@/contexts/AuthContext";
-import { getGravatarUrl } from "@/utils/gravatar";
+import { getSmartGravatarUrl } from "@/utils/gravatar";
 import Image from "next/image";
 
 interface NavbarProps {
@@ -25,8 +25,10 @@ export default function Navbar({ onUploadClick, onOpenAuth, onHomeClick }: Navba
       if (user.image) {
         setAvatarUrl(user.image);
       } else if (user.email) {
-        setAvatarUrl(getGravatarUrl(user.email, 64));
+        setAvatarUrl(getSmartGravatarUrl(user.email, 64));
       }
+    } else {
+      setAvatarUrl(null);
     }
   }, [user]);
 

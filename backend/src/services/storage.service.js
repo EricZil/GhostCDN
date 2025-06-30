@@ -553,8 +553,55 @@ class StorageService {
       await doSpacesClient.send(command);
       console.log(`Successfully deleted file: ${fileKey}`);
     } catch (error) {
+      // If file doesn't exist, that's okay - it might have been manually deleted
+      if (error.name === 'NoSuchKey' || error.$metadata?.httpStatusCode === 404) {
+        console.log(`File not found in storage (already deleted?): ${fileKey}`);
+        return;
+      }
       console.error(`Error deleting file ${fileKey}:`, error);
       throw error;
+    }
+  }
+
+  /**
+   * Delete thumbnails associated with a file
+   * @param {string} fileKey - The key of the original file
+   * @returns {Promise<void>}
+   */
+  async deleteThumbnailsFromStorage(fileKey) {
+    try {
+      // Determine thumbnail folder based on file location
+      let thumbnailBasePath;
+      if (fileKey.startsWith('Guests/')) {
+        thumbnailBasePath = 'Guests/Thumbnails/';
+      } else if (fileKey.startsWith('Registered/')) {
+        const pathParts = fileKey.split('/');
+        const userFolder = pathParts[1];
+        thumbnailBasePath = `Registered/${userFolder}/Thumbnails/`;
+      } else {
+        return; // Unknown path structure
+      }
+      
+      // Get the base filename without path and extension
+      const originalFileName = path.basename(fileKey);
+      const baseName = originalFileName.substring(0, originalFileName.lastIndexOf('.'));
+      
+      // Delete thumbnails for each size
+      const thumbnailSizes = ['small', 'medium', 'large'];
+      const thumbnailExtension = '.webp';
+      
+      for (const size of thumbnailSizes) {
+        try {
+          const thumbnailKey = `${thumbnailBasePath}${baseName}_${size}${thumbnailExtension}`;
+          await this.deleteFile(thumbnailKey);
+        } catch (error) {
+          // Continue if thumbnail doesn't exist
+          console.log(`Thumbnail not found or already deleted: ${thumbnailKey}`);
+        }
+      }
+    } catch (error) {
+      console.error(`Error deleting thumbnails for ${fileKey}:`, error);
+      // Don't throw - main file deletion is more important
     }
   }
   

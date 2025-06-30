@@ -8,6 +8,7 @@ import { PointerHighlight } from "@/components/PointerHighlight";
 import AnimatedGradientBorder from "@/components/ui/AnimatedGradientBorder";
 import { motion, AnimatePresence } from 'framer-motion';
 import QRCode from 'qrcode';
+import ThumbnailLinks from '@/components/upload/ThumbnailLinks';
 
 interface ImageInfo {
   url: string;
@@ -21,7 +22,7 @@ interface ImageInfo {
     small: string;
     medium: string;
     large: string;
-  };
+  } | null;
 }
 
 export default function ImageViewer() {
@@ -47,6 +48,45 @@ export default function ImageViewer() {
   const imageRef = useRef<HTMLImageElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
+  // Generate thumbnail URLs based on file structure
+  const generateThumbnailUrls = useCallback((originalFileKey: string) => {
+    const baseUrl = process.env.NEXT_PUBLIC_CDN_URL || 'https://cdn.gcdn.space';
+    
+    // Determine thumbnail folder based on file location
+    let thumbnailBasePath;
+    if (originalFileKey.startsWith('Guests/')) {
+      thumbnailBasePath = 'Guests/Thumbnails/';
+    } else if (originalFileKey.startsWith('Registered/')) {
+      const pathParts = originalFileKey.split('/');
+      const userFolder = pathParts[1];
+      thumbnailBasePath = `Registered/${userFolder}/Thumbnails/`;
+    } else {
+      return null; // Invalid structure
+    }
+    
+    // Get the base filename without path and extension
+    const originalFileName = originalFileKey.split('/').pop();
+    if (!originalFileName) return null;
+    
+    const baseName = originalFileName.substring(0, originalFileName.lastIndexOf('.'));
+    
+    return {
+      small: `${baseUrl}/${thumbnailBasePath}${baseName}_small.webp`,
+      medium: `${baseUrl}/${thumbnailBasePath}${baseName}_medium.webp`,
+      large: `${baseUrl}/${thumbnailBasePath}${baseName}_large.webp`
+    };
+  }, []);
+
+  // Check if thumbnail exists
+  const checkThumbnailExists = useCallback(async (url: string): Promise<boolean> => {
+    try {
+      const response = await fetch(url, { method: 'HEAD' });
+      return response.ok;
+    } catch {
+      return false;
+    }
+  }, []);
+
   // Fetch enhanced image data
   useEffect(() => {
     async function fetchImageData() {
@@ -61,6 +101,27 @@ export default function ImageViewer() {
         const response = await fetch(directUrl, { method: 'HEAD' });
         const fileSize = response.headers.get('content-length');
         
+        // Check for thumbnails
+        const thumbnailUrls = generateThumbnailUrls(fileKey);
+        let thumbnails = null;
+        
+        if (thumbnailUrls) {
+          // Check which thumbnails exist
+          const [smallExists, mediumExists, largeExists] = await Promise.all([
+            checkThumbnailExists(thumbnailUrls.small),
+            checkThumbnailExists(thumbnailUrls.medium),
+            checkThumbnailExists(thumbnailUrls.large)
+          ]);
+          
+          if (smallExists || mediumExists || largeExists) {
+            thumbnails = {
+              small: smallExists ? thumbnailUrls.small : '',
+              medium: mediumExists ? thumbnailUrls.medium : '',
+              large: largeExists ? thumbnailUrls.large : ''
+            };
+          }
+        }
+        
         const img = new window.Image();
         img.onload = () => {
           setImageInfo({
@@ -70,6 +131,7 @@ export default function ImageViewer() {
             type: getFileTypeFromKey(fileKey),
             fileSize: fileSize ? parseInt(fileSize) : undefined,
             dominantColors: extractDominantColors(img),
+            thumbnails
           });
           setLoading(false);
         };
@@ -89,7 +151,7 @@ export default function ImageViewer() {
     
     fetchImageData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fileKey]);
+  }, [fileKey, generateThumbnailUrls, checkThumbnailExists]);
 
   // Extract dominant colors from image
   const extractDominantColors = useCallback((img: HTMLImageElement): string[] => {
@@ -473,6 +535,28 @@ export default function ImageViewer() {
                   </button>
                 </div>
               </div>
+
+              {/* Thumbnails Section - Below Image */}
+              {imageInfo.thumbnails && (
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.3 }}
+                  className="mt-8"
+                >
+                  <AnimatedGradientBorder containerClassName="w-full">
+                    <div className={`w-full p-6 ${
+                      theme === 'dark' ? 'bg-[#0f0f19]' : 'bg-white'
+                    }`}>
+                      <ThumbnailLinks 
+                        thumbnails={imageInfo.thumbnails}
+                        copied={copied}
+                        copyToClipboard={copyToClipboard}
+                      />
+                    </div>
+                  </AnimatedGradientBorder>
+                </motion.div>
+              )}
             </motion.div>
 
             {/* Enhanced Sidebar */}
@@ -658,31 +742,33 @@ export default function ImageViewer() {
                            Scan with your phone to open image
                          </p>
                        </div>
-                     </motion.div>
+                                          </motion.div>
                    )}
                  </AnimatePresence>
               </div>
 
-                             {/* Download Options */}
-               <div className="space-y-3">
-                 <button
-                   onClick={downloadImage}
-                   className="block w-full py-3 px-4 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-medium rounded-lg text-center transition-all transform hover:scale-105"
-                 >
-                   💾 Download Original
-                 </button>
-                
+
+
+              {/* Download Options */}
+              <div className="space-y-3">
                 <button
-                  onClick={() => window.open(imageInfo.url, '_blank')}
-                  className={`w-full py-3 px-4 font-medium rounded-lg text-center transition-all transform hover:scale-105 ${
-                    theme === 'dark' 
-                      ? 'bg-gray-700 text-white hover:bg-gray-600' 
-                      : 'bg-gray-200 text-gray-800 hover:bg-gray-300'
-                  }`}
+                  onClick={downloadImage}
+                  className="block w-full py-3 px-4 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-medium rounded-lg text-center transition-all transform hover:scale-105"
                 >
-                  🔗 Open in New Tab
+                  💾 Download Original
                 </button>
-              </div>
+               
+               <button
+                 onClick={() => window.open(imageInfo.url, '_blank')}
+                 className={`w-full py-3 px-4 font-medium rounded-lg text-center transition-all transform hover:scale-105 ${
+                   theme === 'dark' 
+                     ? 'bg-gray-700 text-white hover:bg-gray-600' 
+                     : 'bg-gray-200 text-gray-800 hover:bg-gray-300'
+                 }`}
+               >
+                 🔗 Open in New Tab
+               </button>
+             </div>
             </motion.div>
           </div>
 

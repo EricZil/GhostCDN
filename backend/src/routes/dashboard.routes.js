@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const prisma = require('../lib/prisma');
 const { checkAllBans } = require('../middleware/ban.middleware');
+const storageService = require('../services/storage.service');
 
 // Apply ban checking to all dashboard routes
 router.use(checkAllBans);
@@ -219,11 +220,39 @@ router.get('/uploads/:userEmail', async (req, res) => {
       }
     });
     
-    // Transform uploads to include view count
-    const uploadsWithViews = uploads.map(upload => ({
-      ...upload,
-      viewCount: upload._count.analytics
-    }));
+    // Transform uploads to include view count and thumbnail URLs
+    const uploadsWithViews = uploads.map(upload => {
+      // Generate thumbnail URLs based on file structure
+      let thumbnails = null;
+      const baseUrl = process.env.DO_SPACES_PUBLIC_URL || 'https://cdn.gcdn.space';
+      
+      let thumbnailBasePath;
+      if (upload.fileKey.startsWith('Guests/')) {
+        thumbnailBasePath = 'Guests/Thumbnails/';
+      } else if (upload.fileKey.startsWith('Registered/')) {
+        const pathParts = upload.fileKey.split('/');
+        const userFolder = pathParts[1];
+        thumbnailBasePath = `Registered/${userFolder}/Thumbnails/`;
+      }
+      
+      if (thumbnailBasePath) {
+        const originalFileName = upload.fileKey.split('/').pop();
+        if (originalFileName) {
+          const baseName = originalFileName.substring(0, originalFileName.lastIndexOf('.'));
+          thumbnails = {
+            small: `${baseUrl}/${thumbnailBasePath}${baseName}_small.webp`,
+            medium: `${baseUrl}/${thumbnailBasePath}${baseName}_medium.webp`,
+            large: `${baseUrl}/${thumbnailBasePath}${baseName}_large.webp`
+          };
+        }
+      }
+      
+      return {
+        ...upload,
+        viewCount: upload._count.analytics,
+        thumbnails
+      };
+    });
     
     // Sort by views if requested (post-query sorting)
     if (sortBy === 'views') {
@@ -600,6 +629,20 @@ router.delete('/file/:fileId', async (req, res) => {
       });
     }
     
+    try {
+      // Delete file from DigitalOcean Spaces storage first
+      await storageService.deleteFile(file.fileKey);
+      
+      // Delete associated thumbnails if they exist
+      await storageService.deleteThumbnailsFromStorage(file.fileKey);
+      
+      console.log(`Successfully deleted file from storage: ${file.fileKey}`);
+    } catch (storageError) {
+      console.error(`Error deleting file from storage: ${file.fileKey}`, storageError);
+      // Continue with database deletion even if storage deletion fails
+      // This prevents orphaned database records
+    }
+    
     // Delete file from database (analytics will be cascade deleted)
     await prisma.image.delete({
       where: { id: fileId }
@@ -619,11 +662,9 @@ router.delete('/file/:fileId', async (req, res) => {
       }
     });
     
-    // File deletion from storage would be implemented here
-    
     res.json({
       success: true,
-      message: 'File deleted successfully'
+      message: 'File deleted successfully from database and storage'
     });
   } catch (error) {
     console.error('Error deleting file:', error);
@@ -682,6 +723,23 @@ router.delete('/files/bulk', async (req, res) => {
       });
     }
     
+    // Delete files from DigitalOcean Spaces storage first
+    const storageErrors = [];
+    for (const file of files) {
+      try {
+        // Delete file from storage
+        await storageService.deleteFile(file.fileKey);
+        
+        // Delete associated thumbnails
+        await storageService.deleteThumbnailsFromStorage(file.fileKey);
+        
+      } catch (storageError) {
+        console.error(`Error deleting file from storage: ${file.fileKey}`, storageError);
+        storageErrors.push({ fileKey: file.fileKey, error: storageError.message });
+        // Continue with other files even if one fails
+      }
+    }
+    
     // Delete files from database
     await prisma.image.deleteMany({
       where: { 
@@ -698,17 +756,17 @@ router.delete('/files/bulk', async (req, res) => {
         message: `Bulk deleted ${files.length} files`,
         metadata: JSON.stringify({
           deletedFiles: files.map(f => ({ fileName: f.fileName, fileKey: f.fileKey })),
-          count: files.length
+          count: files.length,
+          storageErrors: storageErrors.length > 0 ? storageErrors : null
         })
       }
     });
     
-    // File deletion from storage would be implemented here
-    
     res.json({
       success: true,
-      message: `Successfully deleted ${files.length} files`,
-      deletedCount: files.length
+      message: `Successfully deleted ${files.length} files from database and storage`,
+      deletedCount: files.length,
+      storageErrors: storageErrors.length > 0 ? storageErrors.length : 0
     });
   } catch (error) {
     console.error('Error bulk deleting files:', error);
