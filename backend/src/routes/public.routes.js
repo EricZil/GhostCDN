@@ -117,12 +117,12 @@ router.post('/cleanup/webhook', async (req, res) => {
         level: 'INFO',
         message: `Webhook cleanup completed: ${result.deletedCount} files deleted, ${result.errorCount} errors`,
         source: 'webhook',
-        metadata: {
+        metadata: JSON.stringify({
           ...result,
           triggeredBy: 'webhook',
           userAgent: req.headers['user-agent'],
           ip: req.ip
-        }
+        })
       }
     });
 
@@ -140,11 +140,11 @@ router.post('/cleanup/webhook', async (req, res) => {
         level: 'ERROR',
         message: 'Webhook cleanup failed',
         source: 'webhook',
-        metadata: {
+        metadata: JSON.stringify({
           error: error.message,
           userAgent: req.headers['user-agent'],
           ip: req.ip
-        }
+        })
       }
     });
     

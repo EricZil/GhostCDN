@@ -611,11 +611,11 @@ router.delete('/file/:fileId', async (req, res) => {
         userId,
         type: 'DELETE',
         message: `Deleted file: ${file.fileName}`,
-        metadata: {
+        metadata: JSON.stringify({
           fileName: file.fileName,
           fileKey: file.fileKey,
           fileSize: file.fileSize
-        }
+        })
       }
     });
     
@@ -696,10 +696,10 @@ router.delete('/files/bulk', async (req, res) => {
         userId,
         type: 'DELETE',
         message: `Bulk deleted ${files.length} files`,
-        metadata: {
+        metadata: JSON.stringify({
           deletedFiles: files.map(f => ({ fileName: f.fileName, fileKey: f.fileKey })),
           count: files.length
-        }
+        })
       }
     });
     

@@ -53,20 +53,32 @@ class StorageService {
       
       // Generate a unique file key with proper folder structure
       const fileExtension = path.extname(filename).toLowerCase();
-      const uniqueFileName = `${uuidv4()}${fileExtension}`;
+      const baseName = path.basename(filename, fileExtension);
+      
+      // Option to preserve original filename while ensuring uniqueness
+      let finalFileName;
+      if (options.preserveFilename === true) {
+        // Preserve original filename with UUID prefix to ensure uniqueness
+        const shortUuid = uuidv4().split('-')[0]; // Use first part of UUID for shorter names
+        finalFileName = `${shortUuid}_${baseName}${fileExtension}`;
+      } else {
+        // Default behavior: UUID filename for maximum uniqueness
+        finalFileName = `${uuidv4()}${fileExtension}`;
+      }
       
       let fileKey;
       if (isRegisteredUser && userFolderName) {
         // Registered users: Registered/{userUUID}/{filename}
-        fileKey = `Registered/${userFolderName}/${uniqueFileName}`;
+        fileKey = `Registered/${userFolderName}/${finalFileName}`;
       } else {
         // Guests: Guests/{filename}
-        fileKey = `Guests/${uniqueFileName}`;
+        fileKey = `Guests/${finalFileName}`;
       }
       
       // Store upload options as metadata
       const metadata = {
         'original-filename': filename,
+        'preserve-filename': options.preserveFilename === true ? 'true' : 'false',
         'optimize': options.optimize !== false ? 'true' : 'false',
         'preserve-exif': options.preserveExif === true ? 'true' : 'false',
         'generate-thumbnails': options.generateThumbnails === true ? 'true' : 'false',
@@ -467,13 +479,13 @@ class StorageService {
                 userId: user.id,
                 type: 'UPLOAD',
                 message: `Uploaded file: ${metadata['original-filename'] || path.basename(fileKey)}`,
-                metadata: {
+                metadata: JSON.stringify({
                   fileKey: processedFileKey,
                   fileSize: fileMetadata.ContentLength || 0,
                   fileType: fileExtension.replace('.', '').toUpperCase(),
                   processed: isImage && processingOptions.optimize,
                   thumbnails: thumbnails ? Object.keys(thumbnails) : null
-                }
+                })
               }
             });
             

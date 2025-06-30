@@ -28,13 +28,14 @@ class UploadController {
       
       // Extract upload settings from the request body
       const uploadOptions = {
+        preserveFilename: req.body.preserveFilename === 'true' || req.body.preserveFilename === true, // Default to false if not specified
         optimize: req.body.optimize !== 'false' && req.body.optimize !== false, // Default to true if not specified
         preserveExif: req.body.preserveExif === 'true' || req.body.preserveExif === true, // Default to false if not specified
         generateThumbnails: req.body.generateThumbnails === 'true' || req.body.generateThumbnails === true, // Default to false if not specified
       };
       
       const fileInfo = { filename, contentType, fileSize };
-      const result = await storageService.getPresignedUrl(fileInfo, false, uploadOptions);
+      const result = await storageService.getPresignedUrl(fileInfo, false, null, uploadOptions);
       
       return res.status(200).json({
         success: true,
@@ -77,6 +78,7 @@ class UploadController {
       
       // Extract upload settings from the request body
       const uploadOptions = {
+        preserveFilename: req.body.preserveFilename === 'true' || req.body.preserveFilename === true, // Default to false if not specified
         optimize: req.body.optimize !== 'false' && req.body.optimize !== false, // Default to true if not specified
         preserveExif: req.body.preserveExif === 'true' || req.body.preserveExif === true, // Default to false if not specified
         generateThumbnails: req.body.generateThumbnails === 'true' || req.body.generateThumbnails === true, // Default to false if not specified
@@ -85,7 +87,7 @@ class UploadController {
       // Here we would verify the user is authenticated
       // For now, we'll assume the user is authenticated if they hit this endpoint
       const fileInfo = { filename, contentType, fileSize };
-      const result = await storageService.getPresignedUrl(fileInfo, true, uploadOptions);
+      const result = await storageService.getPresignedUrl(fileInfo, true, null, uploadOptions);
       
       return res.status(200).json({
         success: true,

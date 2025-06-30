@@ -10,6 +10,8 @@ interface UploadFormProps {
   fileName: string;
   setFileName: (name: string) => void;
   imageDimensions: { width: number; height: number };
+  preserveFilename: boolean;
+  setPreserveFilename: (value: boolean) => void;
   optimizeImage: boolean;
   setOptimizeImage: (value: boolean) => void;
   preserveExif: boolean;
@@ -41,6 +43,8 @@ export default function UploadForm({
   fileName,
   setFileName,
   imageDimensions,
+  preserveFilename,
+  setPreserveFilename,
   optimizeImage,
   setOptimizeImage,
   preserveExif,
@@ -84,6 +88,8 @@ export default function UploadForm({
                 setFileName={setFileName}
                 file={file}
                 imageDimensions={imageDimensions}
+                preserveFilename={preserveFilename}
+                setPreserveFilename={setPreserveFilename}
                 optimizeImage={optimizeImage}
                 setOptimizeImage={setOptimizeImage}
                 preserveExif={preserveExif}

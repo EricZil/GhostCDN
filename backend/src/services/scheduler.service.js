@@ -74,11 +74,11 @@ class SchedulerService {
             level: 'ERROR',
             message: 'Scheduled guest upload cleanup failed',
             source: 'scheduler',
-            metadata: {
+            metadata: JSON.stringify({
               error: error.message,
               task: 'guest-cleanup',
               scheduled: true
-            }
+            })
           }
         });
       }
@@ -113,11 +113,11 @@ class SchedulerService {
             level: 'ERROR',
             message: 'Scheduled health check failed',
             source: 'scheduler',
-            metadata: {
+            metadata: JSON.stringify({
               error: error.message,
               task: 'health-check',
               scheduled: true
-            }
+            })
           }
         });
       }
@@ -156,12 +156,12 @@ class SchedulerService {
             level: 'INFO',
             message: `Scheduled log cleanup completed: ${deletedCount.count} logs deleted`,
             source: 'scheduler',
-            metadata: {
+            metadata: JSON.stringify({
               deletedCount: deletedCount.count,
               cutoffDays: 90,
               task: 'log-cleanup',
               scheduled: true
-            }
+            })
           }
         });
       } catch (error) {
@@ -172,11 +172,11 @@ class SchedulerService {
             level: 'ERROR',
             message: 'Scheduled log cleanup failed',
             source: 'scheduler',
-            metadata: {
+            metadata: JSON.stringify({
               error: error.message,
               task: 'log-cleanup',
               scheduled: true
-            }
+            })
           }
         });
       }

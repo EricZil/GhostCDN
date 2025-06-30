@@ -43,7 +43,12 @@ router.get('/status', async (req, res) => {
 // Get presigned URL for guest upload
 router.post('/guest/presigned-url', async (req, res) => {
   try {
-    const { filename, contentType, fileSize, ...options } = req.body;
+    const { filename, contentType, fileSize, preserveFilename, ...options } = req.body;
+    
+    // Add preserveFilename to options if provided
+    if (preserveFilename !== undefined) {
+      options.preserveFilename = preserveFilename;
+    }
     
     if (!filename || !contentType || !fileSize) {
       return res.status(400).json({
@@ -77,7 +82,12 @@ router.post('/guest/presigned-url', async (req, res) => {
 // Get presigned URL for registered user upload
 router.post('/user/presigned-url', validateNextAuthJWT, async (req, res) => {
   try {
-    const { filename, contentType, fileSize, token, userFolderName, ...options } = req.body;
+    const { filename, contentType, fileSize, token, userFolderName, preserveFilename, ...options } = req.body;
+    
+    // Add preserveFilename to options if provided
+    if (preserveFilename !== undefined) {
+      options.preserveFilename = preserveFilename;
+    }
     
     if (!filename || !contentType || !fileSize || !userFolderName) {
       return res.status(400).json({

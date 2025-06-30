@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { signIn } from 'next-auth/react';
 import EmailVerificationModal from './EmailVerificationModal';
+import ForgotPasswordModal from './ForgotPasswordModal';
 
 export default function LoginForm() {
   const [email, setEmail] = useState('');
@@ -12,6 +13,7 @@ export default function LoginForm() {
   const { login, isLoading } = useAuth();
   const [localError, setLocalError] = useState('');
   const [showVerificationModal, setShowVerificationModal] = useState(false);
+  const [showForgotPasswordModal, setShowForgotPasswordModal] = useState(false);
   const [isBanned, setIsBanned] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -109,9 +111,13 @@ export default function LoginForm() {
           </div>
 
           <div className="text-sm">
-            <a href="#" className="font-medium text-purple-400 hover:text-purple-300 transition-colors">
+            <button 
+              type="button"
+              onClick={() => setShowForgotPasswordModal(true)}
+              className="font-medium text-purple-400 hover:text-purple-300 transition-colors"
+            >
               Forgot your password?
-            </a>
+            </button>
           </div>
         </div>
 
@@ -201,6 +207,13 @@ export default function LoginForm() {
           isOpen={showVerificationModal}
           onClose={() => setShowVerificationModal(false)}
           email={email}
+        />
+      )}
+
+      {showForgotPasswordModal && (
+        <ForgotPasswordModal
+          isOpen={showForgotPasswordModal}
+          onClose={() => setShowForgotPasswordModal(false)}
         />
       )}
     </>

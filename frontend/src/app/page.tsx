@@ -36,6 +36,13 @@ export default function Home() {
   const openAuthModal = () => setIsAuthModalOpen(true);
   const closeAuthModal = () => setIsAuthModalOpen(false);
 
+  // Function to close all modals when home icon is clicked
+  const closeAllModals = () => {
+    setIsModalOpen(false);
+    setIsAuthModalOpen(false);
+    setInitialFile(null);
+  };
+
   // System messages are now loaded via React Query hook above
 
   // Handle drag events to open upload modal
@@ -184,7 +191,7 @@ export default function Home() {
       <AuthModal isOpen={isAuthModalOpen} onClose={closeAuthModal} />
       
       {/* Navbar */}
-      <Navbar onUploadClick={openModal} onOpenAuth={openAuthModal} />
+      <Navbar onUploadClick={openModal} onOpenAuth={openAuthModal} onHomeClick={closeAllModals} />
       
       {/* Maintenance Mode Overlay */}
       <MaintenanceMode isActive={settings?.maintenanceMode || false} />

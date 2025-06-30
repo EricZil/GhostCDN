@@ -13,15 +13,6 @@ const validateNextAuthJWT = async (req, res, next) => {
     const authHeader = req.headers.authorization;
     const token = req.body.token || req.query.token || (authHeader && authHeader.startsWith('Bearer ') ? authHeader.substring(7) : null);
     
-    // Debug logging
-    console.log('JWT Validation Debug:', {
-      authHeader: authHeader ? 'present' : 'missing',
-      tokenFromBody: req.body.token ? 'present' : 'missing',
-      tokenFromQuery: req.query.token ? 'present' : 'missing',
-      finalToken: token ? `present (${token.length} chars)` : 'missing',
-      headers: Object.keys(req.headers)
-    });
-    
     if (!token) {
       return res.status(401).json({
         success: false,
@@ -38,20 +29,12 @@ const validateNextAuthJWT = async (req, res, next) => {
         message: 'Server configuration error'
       });
     }
-    
-    console.log('JWT Secret available:', jwtSecret ? `${jwtSecret.length} chars` : 'missing');
-    
+        
     let decoded;
     try {
       decoded = jwt.verify(token, jwtSecret);
-      console.log('JWT verification successful:', { userId: decoded.id || decoded.sub, email: decoded.email });
     } catch (jwtError) {
-      console.log('JWT verification failed:', {
-        error: jwtError.name,
-        message: jwtError.message,
-        tokenStart: token.substring(0, 50),
-        secretStart: jwtSecret.substring(0, 20)
-      });
+      
       
       if (jwtError.name === 'TokenExpiredError') {
         return res.status(401).json({

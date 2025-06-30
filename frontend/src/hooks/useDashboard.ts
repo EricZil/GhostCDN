@@ -222,7 +222,13 @@ export function useDashboard() {
     try {
       setLoading(true);
       setError(null);
-      const response = await fetch(`/api/dashboard?endpoint=file&fileId=${fileId}`, {
+      
+      const params = new URLSearchParams({
+        endpoint: 'file',
+        fileId: fileId
+      });
+      
+      const response = await fetch(`/api/dashboard?${params.toString()}`, {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',

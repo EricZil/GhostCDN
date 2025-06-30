@@ -22,8 +22,8 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json(data);
-  } catch {
-    // Resend verification error handled
+  } catch (error) {
+    console.error('Resend verification error:', error);
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }

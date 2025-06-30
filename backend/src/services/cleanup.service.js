@@ -72,14 +72,14 @@ class CleanupService {
               level: 'INFO',
               message: `Deleted expired guest upload: ${upload.fileName}`,
               source: 'cleanup',
-              metadata: {
+              metadata: JSON.stringify({
                 fileKey: upload.fileKey,
                 fileName: upload.fileName,
                 fileSize: upload.fileSize,
                 uploadedAt: upload.uploadedAt.toISOString(),
                 expiresAt: upload.expiresAt.toISOString(),
                 daysExpired: Math.floor((now - upload.expiresAt) / (1000 * 60 * 60 * 24))
-              }
+              })
             }
           });
           
@@ -95,12 +95,12 @@ class CleanupService {
               level: 'ERROR',
               message: `Failed to delete expired guest upload: ${upload.fileName}`,
               source: 'cleanup',
-              metadata: {
+              metadata: JSON.stringify({
                 fileKey: upload.fileKey,
                 fileName: upload.fileName,
                 error: error.message,
                 expiresAt: upload.expiresAt.toISOString()
-              }
+              })
             }
           });
         }
@@ -122,7 +122,7 @@ class CleanupService {
           level: errorCount > 0 ? 'WARN' : 'INFO',
           message: `Guest upload cleanup completed: ${deletedCount} deleted, ${errorCount} errors`,
           source: 'cleanup',
-          metadata: result
+          metadata: JSON.stringify(result)
         }
       });
       
@@ -136,10 +136,10 @@ class CleanupService {
           level: 'ERROR',
           message: 'Guest upload cleanup failed',
           source: 'cleanup',
-          metadata: {
+          metadata: JSON.stringify({
             error: error.message,
             stack: error.stack
-          }
+          })
         }
       });
       

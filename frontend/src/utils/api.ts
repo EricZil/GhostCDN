@@ -7,6 +7,7 @@
  */
 export interface UploadOptions {
   filename?: string;
+  preserveFilename?: boolean;
   optimize?: boolean;
   preserveExif?: boolean;
   generateThumbnails?: boolean;

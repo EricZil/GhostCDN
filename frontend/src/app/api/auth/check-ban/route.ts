@@ -20,8 +20,8 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json(data);
-  } catch {
-    // Ban check proxy error handled
+  } catch (error) {
+    console.error('Ban check proxy error:', error);
     return NextResponse.json(
       { success: false, error: 'Failed to check ban status' },
       { status: 500 }
@@ -58,8 +58,8 @@ export async function GET(request: NextRequest) {
     }
 
     return NextResponse.json(data);
-  } catch {
-    // Ban test proxy error handled
+  } catch (error) {
+    console.error('Ban test proxy error:', error);
     return NextResponse.json(
       { success: false, error: 'Failed to test ban status' },
       { status: 500 }

@@ -7,6 +7,7 @@ import { useParams } from 'next/navigation';
 import { PointerHighlight } from "@/components/PointerHighlight";
 import AnimatedGradientBorder from "@/components/ui/AnimatedGradientBorder";
 import { motion, AnimatePresence } from 'framer-motion';
+import QRCode from 'qrcode';
 
 interface ImageInfo {
   url: string;
@@ -41,6 +42,7 @@ export default function ImageViewer() {
   const [showImageInfo, setShowImageInfo] = useState(true);
   const [showQR, setShowQR] = useState(false);
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
+  const [qrCodeUrl, setQrCodeUrl] = useState<string | null>(null);
   
   const imageRef = useRef<HTMLImageElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -236,9 +238,30 @@ export default function ImageViewer() {
     }
   };
 
-  const generateQRCode = (url: string) => {
-    return `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(url)}`;
-  };
+  const generateQRCode = useCallback(async (url: string) => {
+    try {
+      const qrDataURL = await QRCode.toDataURL(url, {
+        width: 200,
+        margin: 1,
+        color: {
+          dark: '#000000',
+          light: '#FFFFFF'
+        },
+        errorCorrectionLevel: 'M'
+      });
+      setQrCodeUrl(qrDataURL);
+    } catch (error) {
+      console.error('Failed to generate QR code:', error);
+      setQrCodeUrl(null);
+    }
+  }, []);
+
+  // Generate QR code when image info changes and QR is shown
+  useEffect(() => {
+    if (showQR && imageInfo?.url && !qrCodeUrl) {
+      generateQRCode(imageInfo.url);
+    }
+  }, [showQR, imageInfo?.url, qrCodeUrl, generateQRCode]);
 
   const shareLinks = imageInfo ? [
     { name: 'Direct Link', value: imageInfo.url, icon: '🔗' },
@@ -531,7 +554,13 @@ export default function ImageViewer() {
                     🔗 Share & Export
                   </h2>
                   <button
-                    onClick={() => setShowQR(!showQR)}
+                    onClick={() => {
+                      const newShowQR = !showQR;
+                      setShowQR(newShowQR);
+                      if (newShowQR && imageInfo?.url && !qrCodeUrl) {
+                        generateQRCode(imageInfo.url);
+                      }
+                    }}
                     className={`p-2 rounded-lg transition-colors ${
                       theme === 'dark' 
                         ? 'bg-gray-700 text-white hover:bg-gray-600' 
@@ -608,13 +637,22 @@ export default function ImageViewer() {
                              ? 'bg-white border-purple-500/30 shadow-lg shadow-purple-500/20' 
                              : 'bg-white border-purple-500/50 shadow-lg shadow-purple-500/10'
                          }`}>
-                           <Image
-                             src={generateQRCode(imageInfo.url)}
-                             alt="QR Code for image URL"
-                             className="rounded-lg"
-                             width={140}
-                             height={140}
-                           />
+                           {qrCodeUrl ? (
+                             <Image
+                               src={qrCodeUrl}
+                               alt="QR Code for image URL"
+                               className="rounded-lg"
+                               width={140}
+                               height={140}
+                             />
+                           ) : (
+                             <div className="w-[140px] h-[140px] flex items-center justify-center bg-gray-100 rounded-lg">
+                               <div className="text-center">
+                                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 mx-auto mb-2"></div>
+                                 <p className="text-xs text-gray-600">Generating QR...</p>
+                               </div>
+                             </div>
+                           )}
                          </div>
                          <p className={`text-xs mt-2 ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>
                            Scan with your phone to open image
