@@ -22,8 +22,11 @@ const PORT = process.env.PORT || 3001;
 
 // Trust proxy headers when deployed on Vercel or other reverse proxies
 // This is required for express-rate-limit to work correctly with X-Forwarded-For headers
+// Using specific proxy configuration instead of 'true' for better security
 if (process.env.NODE_ENV === 'production' || process.env.VERCEL) {
-  app.set('trust proxy', true);
+  // Trust Vercel's proxy infrastructure and common cloud provider IPs
+  // This is more secure than 'true' while still working with Vercel
+  app.set('trust proxy', ['loopback', 'linklocal', 'uniquelocal']);
 } else {
   // In development, only trust localhost proxies
   app.set('trust proxy', 'loopback');

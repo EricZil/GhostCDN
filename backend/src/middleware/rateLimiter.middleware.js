@@ -1,6 +1,9 @@
 /**
  * Rate limiting middleware
  * Implements different rate limits for different types of endpoints
+ * 
+ * Note: trustProxy is set to false to use the Express app's trust proxy configuration
+ * This prevents the ERR_ERL_PERMISSIVE_TRUST_PROXY error while maintaining security
  */
 
 const rateLimit = require('express-rate-limit');
@@ -24,6 +27,7 @@ const generalLimiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
+  trustProxy: false,
   skip: (req) => {
     return process.env.NODE_ENV === 'development';
   }
@@ -39,6 +43,7 @@ const uploadLimiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
+  trustProxy: false,
   skip: (req) => {
     return process.env.NODE_ENV === 'development';
   }
@@ -54,6 +59,7 @@ const adminLimiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
+  trustProxy: false,
   skip: (req) => {
     return process.env.NODE_ENV === 'development';
   }
@@ -69,6 +75,7 @@ const publicLimiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
+  trustProxy: false,
   skip: (req) => {
     return process.env.NODE_ENV === 'development';
   }
