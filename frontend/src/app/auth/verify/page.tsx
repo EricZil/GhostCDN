@@ -1,11 +1,12 @@
 "use client";
 
+import { Suspense } from 'react';
 import { useEffect, useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { PointerHighlight } from '@/components/PointerHighlight';
 
-export default function VerifyEmailPage() {
+function VerifyEmailContent() {
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
   const [message, setMessage] = useState('');
   const searchParams = useSearchParams();
@@ -223,5 +224,89 @@ export default function VerifyEmailPage() {
         </motion.div>
       </div>
     </div>
+  );
+}
+
+function LoadingFallback() {
+  return (
+    <div className="min-h-screen text-white relative select-none">
+      {/* Main page background - same as homepage */}
+      <div className="fixed inset-0 z-0">
+        {/* Grid background */}
+        <div className="grid-background"></div>
+        
+        {/* Darker gradient overlay */}
+        <div className="dark-gradient-bg"></div>
+        
+        {/* Main content - centered logo (same as main page) */}
+        <div className="container mx-auto px-4 flex flex-col items-center justify-center min-h-screen py-16 relative z-10">
+          <h1 className="text-center transition-all duration-700 opacity-100 translate-y-0 mb-8 flex items-center justify-center">
+            <span className="text-7xl md:text-8xl lg:text-9xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 via-purple-500 to-blue-600 tracking-tight font-geist-mono whitespace-nowrap">
+              GHOST&nbsp;
+            </span>
+            <PointerHighlight 
+              rectangleClassName="border-blue-500/50 dark:border-blue-500/50"
+              pointerClassName="text-blue-500"
+              containerClassName="inline-block"
+            >
+              <span className="text-7xl md:text-8xl lg:text-9xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 via-purple-500 to-blue-600 tracking-tight font-geist-mono whitespace-nowrap">
+                CDN
+              </span>
+            </PointerHighlight>
+          </h1>
+          
+          <div className="transition-all duration-700 delay-300 opacity-100 translate-y-0">
+            <p className="ghost-tagline text-center max-w-3xl text-2xl md:text-3xl lg:text-4xl font-medium text-white/90 mb-8 font-geist-mono">
+              One upload. Global delivery.
+            </p>
+          </div>
+        </div>
+      </div>
+      
+      {/* Subtle blur overlay for modal effect */}
+      <div className="fixed inset-0 bg-black/40 backdrop-blur-[2px] flex items-center justify-center p-4 z-50">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95, y: 20 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.95, y: 20 }}
+          transition={{ duration: 0.5, type: "spring", stiffness: 300, damping: 30 }}
+          className="bg-gray-900/90 backdrop-blur-xl border border-gray-800/50 rounded-2xl p-8 shadow-2xl max-w-md w-full text-center relative"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Header with improved styling */}
+          <div className="mb-8">
+            <div className="flex items-center justify-center mb-3">
+              <div className="w-12 h-12 bg-purple-500/20 rounded-full flex items-center justify-center mr-3">
+                <span className="text-2xl">👻</span>
+              </div>
+              <h1 className="text-2xl font-bold text-white">GhostCDN</h1>
+            </div>
+            <h2 className="text-lg font-medium text-gray-300">Email Verification</h2>
+          </div>
+          
+          <motion.div 
+            className="w-20 h-20 mx-auto mb-6"
+            animate={{ rotate: 360 }}
+            transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+          >
+            <div className="w-full h-full border-4 border-purple-500/30 border-t-purple-500 rounded-full"></div>
+          </motion.div>
+          
+          <div className="mb-6">
+            <p className="text-lg mb-4 text-gray-300">
+              Loading verification...
+            </p>
+          </div>
+        </motion.div>
+      </div>
+    </div>
+  );
+}
+
+export default function VerifyEmailPage() {
+  return (
+    <Suspense fallback={<LoadingFallback />}>
+      <VerifyEmailContent />
+    </Suspense>
   );
 } 
