@@ -72,7 +72,7 @@ app.use('/api/dashboard', validateApiKey, dashboardRoutes);
 app.use('/api/admin', adminLimiter, adminRoutes);
 
 // Auth routes (no API key required for frontend, but rate limited)
-app.use('/api/auth', publicLimiter, validateApiKey, authRoutes);
+app.use('/api/auth', publicLimiter, authRoutes);
 
 // Public routes (no API key required, but rate limited)
 app.use('/api/public', publicLimiter, publicRoutes);
