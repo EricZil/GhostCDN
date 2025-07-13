@@ -93,22 +93,4 @@ app.use((err, req, res, next) => {
   });
 });
 
-app.listen(PORT, async () => {
-  console.log(`🚀 GhostCDN Backend running on port ${PORT}`);
-  
-  // Give Prisma client a moment to initialize
-  await new Promise(resolve => setTimeout(resolve, 1000));
-  
-  // Seed test logs on startup (only if none exist)
-  await seedTestLogs();
-  
-  // Perform initial health check
-  await performBackgroundHealthCheck();
-  
-  // Note: Periodic health checks and cleanup are handled via webhooks for Vercel compatibility
-  if (process.env.NODE_ENV !== 'production') {
-    console.log('🏥 Health monitoring initialized');
-    console.log('🕒 Cleanup system ready - use webhook endpoints for automated tasks');
-    console.log('📡 Webhook endpoint: POST /api/public/cleanup/webhook');
-  }
-}); 
+module.exports = app;
