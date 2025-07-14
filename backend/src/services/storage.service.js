@@ -89,6 +89,19 @@ class StorageService {
         metadata['user-folder'] = userFolderName;
       }
       
+      // Add Discord-friendly OpenGraph metadata for images and videos
+      const isImage = contentType.startsWith('image/');
+      const isVideo = contentType.startsWith('video/');
+      
+      if (isImage) {
+        metadata['og:type'] = 'website';
+        metadata['og:image'] = `${process.env.DO_SPACES_PUBLIC_URL}/${encodeURIComponent(fileKey)}`;
+      } else if (isVideo) {
+        metadata['og:type'] = 'video.other';
+        metadata['og:video:url'] = `${process.env.DO_SPACES_PUBLIC_URL}/${encodeURIComponent(fileKey)}`;
+        metadata['og:video:type'] = contentType;
+      }
+      
       // Create the command for putting an object
       const command = new PutObjectCommand({
         Bucket: bucketName,
@@ -363,9 +376,14 @@ class StorageService {
       
       // Check if this is an image file that can be processed
       const isImage = contentType.startsWith('image/');
+      const isVideo = contentType.startsWith('video/');
       const imageExtensions = ['.jpg', '.jpeg', '.png', '.webp', '.gif'];
       const fileExtension = path.extname(fileKey).toLowerCase();
       const canProcessImage = isImage && imageExtensions.includes(fileExtension);
+      
+      // Enhanced metadata for Discord embedding
+      const enhancedMetadata = {...metadata};
+      let width, height;
       
       // Only process images, skip for other file types
       if (canProcessImage && (processingOptions.optimize || processingOptions.generateThumbnails)) {
@@ -379,36 +397,58 @@ class StorageService {
         const { Body } = await doSpacesClient.send(getObjectCommand);
         const imageBuffer = await streamToBuffer(Body);
         
-        if (processingOptions.optimize) {
+        // Add OpenGraph metadata for Discord embedding
+        if (isImage) {
+          console.log('Processing image:', fileKey);
           try {
-            // Process the image based on options
-            const processedBuffer = await this.processImage(imageBuffer, fileKey, {
-              optimize: processingOptions.optimize,
-              preserveExif: processingOptions.preserveExif
+            // For images, add width and height to metadata for Discord embedding
+            const imageInfo = await sharp(imageBuffer).metadata();
+            width = imageInfo.width;
+            height = imageInfo.height;
+            
+            // Use proper HTTP header format (hyphens instead of colons)
+            enhancedMetadata['og-type'] = 'image';
+            enhancedMetadata['og-image'] = fileUrl;
+            enhancedMetadata['og-image-width'] = String(width);
+            enhancedMetadata['og-image-height'] = String(height);
+            
+            // Re-upload with enhanced metadata
+            const uploadParams = {
+              Bucket: bucketName,
+              Key: fileKey,
+              Body: imageBuffer,
+              ContentType: contentType,
+              ACL: 'public-read',
+              Metadata: enhancedMetadata,
+            };
+            
+            const upload = new Upload({
+              client: doSpacesClient,
+              params: uploadParams,
             });
             
-            if (processedBuffer) {
-              // Re-upload the processed image
-              const uploadParams = {
-                Bucket: bucketName,
-                Key: fileKey,
-                Body: processedBuffer,
-                ContentType: contentType,
-                ACL: 'public-read',
-                Metadata: metadata,
-              };
-              
-              const upload = new Upload({
-                client: doSpacesClient,
-                params: uploadParams,
-              });
-              
-              await upload.done();
-              console.log('Image optimized and re-uploaded:', fileKey);
-            }
+            await upload.done();
+            console.log('Image optimized and re-uploaded with Discord metadata:', fileKey);
           } catch (error) {
             console.error('Error optimizing image:', error);
             // Continue with original image if optimization fails
+          }
+        } else {
+          // If not optimizing, still update metadata for Discord embedding
+          try {
+            const putObjectCommand = new PutObjectCommand({
+              Bucket: bucketName,
+              Key: fileKey,
+              Body: imageBuffer,
+              ContentType: contentType,
+              ACL: 'public-read',
+              Metadata: enhancedMetadata,
+            });
+            
+            await doSpacesClient.send(putObjectCommand);
+            console.log('Updated image metadata for Discord embedding:', fileKey);
+          } catch (error) {
+            console.error('Error updating image metadata:', error);
           }
         }
         
@@ -419,6 +459,36 @@ class StorageService {
           } catch (error) {
             console.error('Error generating thumbnails:', error);
           }
+        }
+      } else if (isVideo) {
+        // For videos, we can't easily get dimensions, but we can still add OpenGraph metadata
+        enhancedMetadata['og-type'] = 'video.other';
+        enhancedMetadata['og-video'] = fileUrl;
+        enhancedMetadata['og-video-type'] = contentType;
+        
+        try {
+          const getObjectCommand = new GetObjectCommand({
+            Bucket: bucketName,
+            Key: fileKey,
+          });
+          
+          const { Body } = await doSpacesClient.send(getObjectCommand);
+          const videoBuffer = await streamToBuffer(Body);
+          
+          // Re-upload with enhanced metadata
+          const putObjectCommand = new PutObjectCommand({
+            Bucket: bucketName,
+            Key: fileKey,
+            Body: videoBuffer,
+            ContentType: contentType,
+            ACL: 'public-read',
+            Metadata: enhancedMetadata,
+          });
+          
+          await doSpacesClient.send(putObjectCommand);
+          console.log('Updated video metadata for Discord embedding:', fileKey);
+        } catch (error) {
+          console.error('Error updating video metadata:', error);
         }
       } else {
         console.log(`Skipping image processing for non-image file or unsupported format: ${contentType}, ${fileKey}`);
@@ -438,18 +508,25 @@ class StorageService {
         // Extract file size from metadata
         const contentLength = objectMetadata.ContentLength || 0;
         const userType = isRegisteredUser ? 'registered' : 'guest';
+        const userId = isRegisteredUser ? metadata['user-id'] : null;
         
-        // Record file details in database (simplified example)
-        const fileRecord = await prisma.file.create({
+        // Record file details in database with proper user connection
+        const fileRecord = await prisma.image.create({
           data: {
-            key: fileKey,
-            originalName: originalFilename,
-            contentType: contentType,
-            size: contentLength,
-            url: fileUrl,
-            userType: userType,
-            userId: isRegisteredUser ? metadata['user-id'] || null : null,
-            thumbnails: thumbnails ? JSON.stringify(thumbnails) : null,
+            fileKey: fileKey,
+            fileName: originalFilename,
+            fileSize: contentLength,
+            fileType: contentType,
+            uploadedAt: new Date(),
+            width: width || null,
+            height: height || null,
+            user: {
+              // Connect to an existing user if userId is available
+              ...(userId ? { connect: { id: userId } } : {
+                // For guest uploads, create a system user if needed
+                connect: { id: process.env.SYSTEM_USER_ID || "guest_user_id" }
+              })
+            }
           },
         });
         
@@ -466,7 +543,9 @@ class StorageService {
         contentType: contentType,
         originalFilename: originalFilename,
         thumbnails: Object.keys(thumbnails).length > 0 ? thumbnails : null,
-        provider: 'digitalocean-spaces'
+        provider: 'digitalocean-spaces',
+        width,
+        height,
       };
     } catch (error) {
       console.error('Error completing direct upload:', error);
@@ -636,4 +715,4 @@ async function streamToBuffer(stream) {
   });
 }
 
-module.exports = new StorageService(); 
+module.exports = new StorageService();
