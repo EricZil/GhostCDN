@@ -1,8 +1,10 @@
 const express = require('express');
 const bcrypt = require('bcrypt');
+const crypto = require('crypto');
 const { v4: uuidv4 } = require('uuid');
 const prisma = require('../lib/prisma');
 const emailService = require('../services/email.service');
+const storageService = require('../services/storage.service');
 const { checkEmailBan } = require('../middleware/ban.middleware');
 
 const router = express.Router();
@@ -107,54 +109,51 @@ router.post('/login', async (req, res) => {
 router.post('/register', checkEmailBan, async (req, res) => {
   try {
     const { name, email, password } = req.body;
-
-    // Validate input
+    
+    // Basic validation
     if (!name || !email || !password) {
       return res.status(400).json({ 
         success: false, 
         error: 'Missing required fields' 
       });
     }
-
+    
     // Check if email already exists
     const existingUser = await prisma.user.findUnique({
       where: { email }
     });
-
+    
     if (existingUser) {
-      return res.status(409).json({ 
+      return res.status(400).json({ 
         success: false, 
         error: 'Email already in use' 
       });
     }
-
+    
     // Hash password
-    const hashedPassword = await bcrypt.hash(password, 12);
-
-    // Generate unique folder name for DigitalOcean Spaces
+    const hashedPassword = await bcrypt.hash(password, 10);
+    
+    // Generate verification token
+    const verificationToken = crypto.randomBytes(32).toString('hex');
+    
+    // Generate a unique folder name for user storage
     const folderName = uuidv4();
     
-    // Generate email verification token
-    const verificationToken = emailService.generateSecureToken();
-
-    // Create user (not verified initially)
+    // Create user in database
     const user = await prisma.user.create({
       data: {
         name,
         email,
         password: hashedPassword,
         r2FolderName: folderName,
-        role: 'USER',
-        emailVerificationToken: verificationToken,
-        emailVerified: null, // Not verified yet
+        verificationToken,
         createdAt: new Date(),
       }
     });
 
     // Create DigitalOcean Spaces folder for user
     try {
-      const storageService = require('../services/storage.service');
-      await storageService.createUserFolder(user.id, folderName);
+      await storageService.createUserFolder(folderName);
     } catch (error) {
       console.error("Error creating user folder:", error);
       // Don't fail registration if folder creation fails
@@ -251,8 +250,7 @@ router.post('/social-login', async (req, res) => {
 
       // Create DigitalOcean Spaces folder for user
       try {
-        const storageService = require('../services/storage.service');
-        await storageService.createUserFolder(user.id, folderName);
+        await storageService.createUserFolder(folderName);
       } catch (error) {
         console.error("Error creating user folder for social login:", error);
       }
@@ -271,8 +269,7 @@ router.post('/social-login', async (req, res) => {
       // Create folder if it doesn't exist
       if (!user.r2FolderName) {
         try {
-          const storageService = require('../services/storage.service');
-          await storageService.createUserFolder(user.id, user.r2FolderName);
+          await storageService.createUserFolder(user.r2FolderName);
         } catch (error) {
           console.error("Error creating missing user folder:", error);
         }
@@ -503,7 +500,7 @@ router.post('/verify-email', async (req, res) => {
 
     // Find user with this verification token
     const user = await prisma.user.findUnique({
-      where: { emailVerificationToken: token }
+      where: { verificationToken: token }
     });
 
     if (!user) {
@@ -525,7 +522,7 @@ router.post('/verify-email', async (req, res) => {
       where: { id: user.id },
       data: {
         emailVerified: new Date(),
-        emailVerificationToken: null // Clear the token
+        verificationToken: null // Clear the token
       }
     });
 
@@ -591,12 +588,12 @@ router.post('/resend-verification', async (req, res) => {
     }
 
     // Generate new verification token
-    const verificationToken = emailService.generateSecureToken();
+    const verificationToken = crypto.randomBytes(32).toString('hex');
 
     // Update user with new token
     await prisma.user.update({
       where: { id: user.id },
-      data: { emailVerificationToken: verificationToken }
+      data: { verificationToken: verificationToken }
     });
 
     // Send verification email
@@ -649,7 +646,7 @@ router.post('/forgot-password', async (req, res) => {
     }
 
     // Generate reset token (expires in 1 hour)
-    const resetToken = emailService.generateSecureToken();
+    const resetToken = crypto.randomBytes(32).toString('hex');
     const resetExpires = new Date(Date.now() + 60 * 60 * 1000); // 1 hour from now
 
     // Update user with reset token

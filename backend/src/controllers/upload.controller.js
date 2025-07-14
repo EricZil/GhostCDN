@@ -199,11 +199,8 @@ class UploadController {
         });
       }
       
-      // Determine if the user is registered based on the request
-      // For now, we'll assume all delete requests are from registered users
-      const isRegisteredUser = true;
-      
-      await storageService.deleteFile(fileKey, isRegisteredUser);
+      // Call deleteFile without the second parameter
+      await storageService.deleteFile(fileKey);
       
       return res.status(200).json({
         success: true,

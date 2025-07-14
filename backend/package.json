@@ -8,6 +8,7 @@
     "dev": "nodemon src/index.js",
     "generate-api-key": "node scripts/generate-api-key.js",
     "test": "jest",
+    "typecheck": "tsc --noEmit",
     "postinstall": "prisma generate"
   },
   "dependencies": {
@@ -36,8 +37,10 @@
     "winston": "^3.17.0"
   },
   "devDependencies": {
+    "@types/mongoose": "^5.11.97",
     "jest": "^30.0.3",
-    "nodemon": "^3.0.1"
+    "nodemon": "^3.0.1",
+    "typescript": "^5.3.3"
   },
   "engines": {
     "node": ">=18.0.0",

@@ -16,7 +16,6 @@ import FileSearch, { SearchFilters } from '@/components/dashboard/FileSearch';
 import Pagination from '@/components/dashboard/Pagination';
 import BulkActions from '@/components/dashboard/BulkActions';
 import AdminOverview from '@/components/dashboard/admin/AdminOverview';
-import AdminCachePerformance from '@/components/dashboard/admin/AdminCachePerformance';
 import UserProfileModal from '@/components/dashboard/admin/UserProfileModal';
 import ThumbnailLinks from '@/components/upload/ThumbnailLinks';
 
@@ -544,11 +543,6 @@ export default function DashboardModal({ isOpen, onClose }: DashboardModalProps)
       id: 'admin-logs', 
       label: 'System Logs', 
       icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-    },
-    { 
-      id: 'admin-cache', 
-      label: 'Cache Performance', 
-      icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
     },
   ];
 
@@ -1697,9 +1691,6 @@ export default function DashboardModal({ isOpen, onClose }: DashboardModalProps)
           </div>
         );
 
-      case 'admin-cache':
-        return <AdminCachePerformance />;
-
       default:
         return (
           <div className="flex items-center justify-center h-64">
@@ -2066,8 +2057,7 @@ export default function DashboardModal({ isOpen, onClose }: DashboardModalProps)
                             onClick={() => setMessageForm(prev => ({ ...prev, type: type.value as 'INFO' | 'WARNING' | 'CRITICAL' }))}
                             className={`p-3 rounded-lg border transition-all ${
                               messageForm.type === type.value
-                                ? `border-${type.color}-500 bg-${type.color}-500/20`
-                                : 'border-gray-700 bg-gray-800/50 hover:border-gray-600'
+                                ? `border-${type.color}-500 bg-${type.color}-500/20`                                : 'border-gray-700 bg-gray-800/50 hover:border-gray-600'
                             }`}
                           >
                             <div className={`w-4 h-4 rounded-full mx-auto mb-2 ${

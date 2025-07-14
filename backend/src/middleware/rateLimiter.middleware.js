@@ -6,7 +6,7 @@
  * This prevents the ERR_ERL_PERMISSIVE_TRUST_PROXY error while maintaining security
  */
 
-const rateLimit = require('express-rate-limit');
+const { rateLimit } = require('express-rate-limit');
 
 // General API rate limit - higher for authenticated users
 const generalLimiter = rateLimit({
@@ -27,7 +27,7 @@ const generalLimiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
-  trustProxy: false,
+  // Rely on Express app's trust proxy setting
   skip: (req) => {
     return process.env.NODE_ENV === 'development';
   }
@@ -43,7 +43,7 @@ const uploadLimiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
-  trustProxy: false,
+  // Rely on Express app's trust proxy setting
   skip: (req) => {
     return process.env.NODE_ENV === 'development';
   }
@@ -59,7 +59,7 @@ const adminLimiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
-  trustProxy: false,
+  // Rely on Express app's trust proxy setting
   skip: (req) => {
     return process.env.NODE_ENV === 'development';
   }
@@ -75,7 +75,7 @@ const publicLimiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
-  trustProxy: false,
+  // Rely on Express app's trust proxy setting
   skip: (req) => {
     return process.env.NODE_ENV === 'development';
   }

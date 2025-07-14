@@ -1,230 +1,172 @@
 const express = require('express');
+const { cache } = require('../lib/cache-manager');
+const prisma = require('../lib/prisma');
+const { validateApiKey } = require('../middleware/apiKey.middleware');
+const { checkAllBans } = require('../middleware/ban.middleware');
+
 const router = express.Router();
-const storageService = require('../services/storage.service');
-const { optionalNextAuthJWT, validateNextAuthJWT } = require('../middleware/jwt.middleware');
 
-// Simple test endpoint to verify routing works
-router.get('/test', (req, res) => {
-  res.json({ 
-    message: 'Storage routes are working!',
-    timestamp: new Date().toISOString(),
-    provider: 'digitalocean-spaces'
-  });
-});
+// Apply middleware
+router.use(validateApiKey);
+router.use(checkAllBans);
 
-// This file is for future storage management endpoints
-// For example:
-// - Listing files
-// - Getting file metadata
-// - Moving files between providers
-// - Managing file permissions
-
-// For now, we'll just have a placeholder route
-router.get('/status', async (req, res) => {
+// Get storage statistics - with caching
+router.get('/stats', async (req, res) => {
   try {
-    // Simple status check - could be enhanced to actually ping the storage service
-    return res.status(200).json({
-      success: true,
-      message: 'Storage service is operational',
-      providers: {
-        'digitalocean-spaces': 'operational'
+    // Try to get from cache first using proper namespace
+    const cacheKey = `storage-stats-${req.user?.id || 'guest'}`;
+    const cachedStats = await cache.get(cacheKey, cache.namespaces.STORAGE);
+    
+    if (cachedStats) {
+      console.log('Returning cached storage statistics');
+      return res.json({
+        success: true,
+        data: cachedStats,
+        fromCache: true
+      });
+    }
+    
+    // Cache miss - fetch from database
+    console.log('Fetching storage statistics from database');
+    
+    const stats = await prisma.image.aggregate({
+      where: {
+        userId: req.user?.id || null
+      },
+      _count: {
+        id: true
+      },
+      _sum: {
+        fileSize: true
       }
     });
+    
+    // Calculate storage usage
+    const storageStats = {
+      totalFiles: stats._count.id || 0,
+      totalSize: stats._sum.fileSize || 0,
+      timestamp: new Date().toISOString(),
+    };
+    
+    // Cache for 5 minutes (less frequently updated data)
+    await cache.set(cacheKey, storageStats, 5 * 60 * 1000, cache.namespaces.STORAGE);
+    
+    return res.json({
+      success: true,
+      data: storageStats,
+      fromCache: false
+    });
   } catch (error) {
-    console.error('Error checking storage status:', error);
+    console.error('Error getting storage stats:', error);
     return res.status(500).json({
       success: false,
-      message: 'Failed to check storage status',
-      error: error.message
+      error: 'Failed to fetch storage statistics'
     });
   }
 });
 
-// Get presigned URL for guest upload
-router.post('/guest/presigned-url', async (req, res) => {
+// Invalidate storage cache when files are modified
+router.post('/invalidate-cache', async (req, res) => {
   try {
-    const { filename, contentType, fileSize, preserveFilename, ...options } = req.body;
+    // Invalidate the entire storage namespace
+    await cache.invalidateNamespace(cache.namespaces.STORAGE);
     
-    // Add preserveFilename to options if provided
-    if (preserveFilename !== undefined) {
-      options.preserveFilename = preserveFilename;
-    }
+    return res.json({
+      success: true,
+      message: 'Storage cache invalidated'
+    });
+  } catch (error) {
+    console.error('Error invalidating cache:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to invalidate cache'
+    });
+  }
+});
+
+// Bulk fetch storage items with batch caching
+router.get('/items', async (req, res) => {
+  try {
+    const { ids } = req.query;
     
-    if (!filename || !contentType || !fileSize) {
+    if (!ids || !Array.isArray(ids)) {
       return res.status(400).json({
         success: false,
-        message: 'Missing required parameters: filename, contentType, fileSize'
+        error: 'Must provide array of item ids'
       });
     }
     
-    const result = await storageService.getPresignedUrl(
-      { filename, contentType, fileSize },
-      false, // isRegisteredUser = false
-      null,  // userFolderName = null for guests
-      options
+    // Try to get all items from cache
+    const itemPromises = ids.map(id => 
+      cache.get(`storage-item-${id}`, cache.namespaces.STORAGE)
     );
     
-    return res.status(200).json({
-      success: true,
-      message: 'Presigned URL generated successfully',
-      data: result
-    });
-  } catch (error) {
-    console.error('Error generating guest presigned URL:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Failed to generate presigned URL',
-      error: error.message
-    });
-  }
-});
-
-// Get presigned URL for registered user upload
-router.post('/user/presigned-url', validateNextAuthJWT, async (req, res) => {
-  try {
-    const { filename, contentType, fileSize, token, userFolderName, preserveFilename, ...options } = req.body;
+    const cachedItems = await Promise.all(itemPromises);
     
-    // Add preserveFilename to options if provided
-    if (preserveFilename !== undefined) {
-      options.preserveFilename = preserveFilename;
-    }
+    // Find which items we need to fetch from the database
+    const missingIndexes = cachedItems.map((item, index) => 
+      item === null ? index : -1
+    ).filter(index => index !== -1);
     
-    if (!filename || !contentType || !fileSize || !userFolderName) {
-      return res.status(400).json({
-        success: false,
-        message: 'Missing required parameters: filename, contentType, fileSize, userFolderName'
+    const missingIds = missingIndexes.map(index => ids[index]);
+    
+    // If all items were in cache, return them
+    if (missingIds.length === 0) {
+      return res.json({
+        success: true,
+        data: cachedItems,
+        fromCache: true
       });
     }
     
-    // User is already validated by the JWT middleware
-    
-    const result = await storageService.getPresignedUrl(
-      { filename, contentType, fileSize },
-      true, // isRegisteredUser = true
-      userFolderName,
-      options
-    );
-    
-    return res.status(200).json({
-      success: true,
-      message: 'Presigned URL generated successfully',
-      data: result
+    // Fetch missing items from database
+    const dbItems = await prisma.image.findMany({
+      where: {
+        id: {
+          in: missingIds
+        }
+      }
     });
-  } catch (error) {
-    console.error('Error generating user presigned URL:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Failed to generate presigned URL',
-      error: error.message
-    });
-  }
-});
-
-// Complete guest upload
-router.post('/guest/complete', async (req, res) => {
-  try {
-    const { fileKey, ...options } = req.body;
     
-    if (!fileKey) {
-      return res.status(400).json({
-        success: false,
-        message: 'Missing required parameter: fileKey'
-      });
+    // Create mapping from id to item
+    const dbItemMap = dbItems.reduce((map, item) => {
+      map[item.id] = item;
+      return map;
+    }, {});
+    
+    // Cache the newly fetched items (batch operation)
+    const cacheItems = dbItems.map(item => ({
+      key: `storage-item-${item.id}`,
+      value: item,
+      ttl: 15 * 60 * 1000, // 15 minutes
+      namespace: cache.namespaces.STORAGE
+    }));
+    
+    // Use batch caching for efficiency
+    if (cacheItems.length > 0) {
+      await cache.mset(cacheItems);
     }
     
-    const result = await storageService.completeDirectUpload(fileKey, options);
+    // Merge cached and database results
+    const result = ids.map((id, index) => {
+      if (cachedItems[index] !== null) {
+        return cachedItems[index]; // Use cached item
+      }
+      return dbItemMap[id] || null; // Use database item or null if not found
+    });
     
-    return res.status(200).json({
+    return res.json({
       success: true,
-      message: 'Upload completed successfully',
-      data: result
+      data: result,
+      fromCache: false,
+      cacheMissCount: missingIds.length,
+      totalCount: ids.length
     });
   } catch (error) {
-    console.error('Error completing guest upload:', error);
+    console.error('Error fetching storage items:', error);
     return res.status(500).json({
       success: false,
-      message: 'Failed to complete upload',
-      error: error.message
-    });
-  }
-});
-
-// Complete registered user upload
-router.post('/user/complete', validateNextAuthJWT, async (req, res) => {
-  try {
-    const { fileKey, token, ...options } = req.body;
-    
-    if (!fileKey) {
-      return res.status(400).json({
-        success: false,
-        message: 'Missing required parameter: fileKey'
-      });
-    }
-    
-    // User is already validated by the JWT middleware
-    
-    const result = await storageService.completeDirectUpload(fileKey, options);
-    
-    return res.status(200).json({
-      success: true,
-      message: 'Upload completed successfully',
-      data: result
-    });
-  } catch (error) {
-    console.error('Error completing user upload:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Failed to complete upload',
-      error: error.message
-    });
-  }
-});
-
-// Create a user folder in DigitalOcean Spaces
-router.post('/create-user-folder', async (req, res) => {
-  try {
-    const { userId, folderName } = req.body;
-    
-    if (!userId || !folderName) {
-      return res.status(400).json({
-        success: false,
-        message: 'Missing required parameters: userId and folderName'
-      });
-    }
-    
-    // Create the user folder in DigitalOcean Spaces
-    await storageService.createUserFolder(folderName);
-    
-    return res.status(200).json({
-      success: true,
-      message: 'User folder created successfully',
-      folderName
-    });
-  } catch (error) {
-    console.error('Error creating user folder:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Failed to create user folder',
-      error: error.message
-    });
-  }
-});
-
-// Initialize basic folder structure (can be called during setup)
-router.post('/initialize', async (req, res) => {
-  try {
-    await storageService.initializeFolderStructure();
-    
-    return res.status(200).json({
-      success: true,
-      message: 'Folder structure initialized successfully'
-    });
-  } catch (error) {
-    console.error('Error initializing folder structure:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Failed to initialize folder structure',
-      error: error.message
+      error: 'Failed to fetch storage items'
     });
   }
 });

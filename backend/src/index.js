@@ -16,6 +16,8 @@ const publicRoutes = require('./routes/public.routes');
 const authRoutes = require('./routes/auth.routes');
 const { router: healthRoutes, performBackgroundHealthCheck } = require('./routes/health.routes');
 const { validateApiKey } = require('./middleware/apiKey.middleware');
+const prisma = require('./lib/prisma');
+const { cache } = require('./lib/cache-manager');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -92,5 +94,72 @@ app.use((err, req, res, next) => {
     ...(isDevelopment && { stack: err.stack })
   });
 });
+
+// Cache warming function - preloads critical data into cache on server start
+async function warmupCache() {
+  try {
+    console.log('[Cache Warmup] Starting cache warmup process...');
+    
+    // 1. Cache system settings
+    const systemSettings = await prisma.systemSettings.findFirst();
+    if (systemSettings) {
+      await cache.set('system-settings', systemSettings, 30 * 60 * 1000, cache.namespaces.SYSTEM);
+      console.log('[Cache Warmup] System settings cached');
+    }
+    
+    // 2. Cache public system messages (announcements, etc.)
+    const activeMessages = await prisma.systemMessage.findMany({
+      where: { isActive: true }
+    });
+    if (activeMessages.length > 0) {
+      await cache.set('active-messages', activeMessages, 15 * 60 * 1000, cache.namespaces.SYSTEM);
+      console.log(`[Cache Warmup] ${activeMessages.length} system messages cached`);
+    }
+    
+    // 3. Cache frequently accessed file types for faster lookup
+    const fileTypes = await prisma.$queryRaw`
+      SELECT "contentType", COUNT(*) as count 
+      FROM "Image" 
+      GROUP BY "contentType" 
+      ORDER BY count DESC 
+      LIMIT 10
+    `;
+    if (fileTypes.length > 0) {
+      await cache.set('common-file-types', fileTypes, 60 * 60 * 1000, cache.namespaces.ANALYTICS);
+      console.log('[Cache Warmup] Common file types cached');
+    }
+    
+    // 4. Cache total stats
+    const totalStats = await prisma.image.aggregate({
+      _count: { id: true },
+      _sum: { fileSize: true, viewCount: true }
+    });
+    if (totalStats) {
+      await cache.set('total-stats', {
+        totalFiles: totalStats._count.id || 0,
+        totalSize: totalStats._sum.fileSize || 0,
+        totalViews: totalStats._sum.viewCount || 0,
+        timestamp: new Date().toISOString()
+      }, 30 * 60 * 1000, cache.namespaces.ANALYTICS);
+      console.log('[Cache Warmup] Total stats cached');
+    }
+    
+    console.log('[Cache Warmup] Cache warmup completed successfully');
+  } catch (error) {
+    console.error('[Cache Warmup] Error warming up cache:', error);
+  }
+}
+
+// Execute cache warmup when app starts
+if (process.env.NODE_ENV === 'production') {
+  // In production, warm up the cache immediately
+  warmupCache();
+  
+  // Then refresh it periodically (every hour)
+  setInterval(warmupCache, 60 * 60 * 1000);
+} else {
+  // In development, delay warmup to avoid slowing startup
+  setTimeout(warmupCache, 5000);
+}
 
 module.exports = app;

@@ -1,5 +1,4 @@
 const { cache: redisCache } = require('./redis-cache');
-const { cache: simpleCache } = require('./cache');
 
 class CacheManager {
   constructor() {
@@ -10,6 +9,17 @@ class CacheManager {
     setInterval(() => {
       this.checkRedisConnection();
     }, 30000);
+    
+    // Define standard namespaces
+    this.namespaces = {
+      USER: 'user',
+      FILE: 'file',
+      UPLOAD: 'upload',
+      STORAGE: 'storage',
+      ANALYTICS: 'analytics',
+      SYSTEM: 'system',
+      SETTINGS: 'settings'
+    };
   }
   
   async checkRedisConnection() {
@@ -19,144 +29,246 @@ class CacheManager {
         console.log('[Cache Manager] Redis connection established');
         this.redisAvailable = true;
       } else if (!isHealthy && this.redisAvailable) {
-        console.log('[Cache Manager] Redis connection lost, falling back to simple cache');
+        console.log('[Cache Manager] Redis connection lost');
         this.redisAvailable = false;
       }
     } catch (error) {
       if (this.redisAvailable) {
-        console.log('[Cache Manager] Redis connection failed, falling back to simple cache');
+        console.log('[Cache Manager] Redis connection failed');
         this.redisAvailable = false;
       }
     }
   }
   
-  async set(key, value, ttl = 600000) {
-    if (this.redisAvailable) {
-      try {
-        return await redisCache.set(key, value, ttl);
-      } catch (error) {
-        console.error('[Cache Manager] Redis set failed, using simple cache:', error);
-        this.redisAvailable = false;
-        return simpleCache.set(key, value, ttl);
-      }
-    } else {
-      return simpleCache.set(key, value, ttl);
+  /**
+   * Store data in cache with TTL
+   * @param {string} key - Cache key
+   * @param {any} value - Data to cache
+   * @param {number} ttl - Time to live in milliseconds (default: 10 minutes)
+   * @param {string} namespace - Optional namespace for the key
+   * @returns {Promise<boolean>} - Success status
+   */
+  async set(key, value, ttl = 600000, namespace = 'general') {
+    if (!this.redisAvailable) {
+      console.warn('[Cache Manager] Redis not available, cache operation skipped');
+      return false;
+    }
+
+    try {
+      return await redisCache.set(key, value, ttl, { namespace, version: redisCache.globalVersion });
+    } catch (error) {
+      console.error('[Cache Manager] Redis set failed:', error);
+      return false;
     }
   }
   
-  async get(key) {
-    if (this.redisAvailable) {
-      try {
-        return await redisCache.get(key);
-      } catch (error) {
-        console.error('[Cache Manager] Redis get failed, using simple cache:', error);
-        this.redisAvailable = false;
-        return simpleCache.get(key);
-      }
-    } else {
-      return simpleCache.get(key);
+  /**
+   * Retrieve data from cache
+   * @param {string} key - Cache key
+   * @param {string} namespace - Optional namespace for the key
+   * @returns {Promise<any|null>} - Cached data or null
+   */
+  async get(key, namespace = 'general') {
+    if (!this.redisAvailable) {
+      console.warn('[Cache Manager] Redis not available, cache operation skipped');
+      return null;
+    }
+
+    try {
+      return await redisCache.get(key, { namespace, version: redisCache.globalVersion });
+    } catch (error) {
+      console.error('[Cache Manager] Redis get failed:', error);
+      return null;
     }
   }
   
-  async delete(key) {
-    if (this.redisAvailable) {
-      try {
-        return await redisCache.delete(key);
-      } catch (error) {
-        console.error('[Cache Manager] Redis delete failed, using simple cache:', error);
-        this.redisAvailable = false;
-        return simpleCache.delete(key);
-      }
-    } else {
-      return simpleCache.delete(key);
+  /**
+   * Delete specific cache entry
+   * @param {string} key - Cache key
+   * @param {string} namespace - Optional namespace for the key
+   * @returns {Promise<boolean>} - Success status
+   */
+  async delete(key, namespace = 'general') {
+    if (!this.redisAvailable) {
+      console.warn('[Cache Manager] Redis not available, cache operation skipped');
+      return false;
+    }
+
+    try {
+      return await redisCache.delete(key, { namespace, version: redisCache.globalVersion });
+    } catch (error) {
+      console.error('[Cache Manager] Redis delete failed:', error);
+      return false;
     }
   }
   
-  async clear() {
-    if (this.redisAvailable) {
-      try {
+  /**
+   * Clear entire cache or a specific namespace
+   * @param {string} [namespace] - Optional namespace to clear, if not provided clears all cache
+   * @returns {Promise<boolean>} - Success status
+   */
+  async clear(namespace) {
+    if (!this.redisAvailable) {
+      console.warn('[Cache Manager] Redis not available, cache operation skipped');
+      return false;
+    }
+
+    try {
+      if (namespace) {
+        // Clear just the specified namespace
+        const count = await redisCache.deleteNamespace(namespace);
+        return count > 0;
+      } else {
+        // Clear all cache
         return await redisCache.clear();
-      } catch (error) {
-        console.error('[Cache Manager] Redis clear failed, using simple cache:', error);
-        this.redisAvailable = false;
-        return simpleCache.clear();
       }
-    } else {
-      return simpleCache.clear();
+    } catch (error) {
+      console.error('[Cache Manager] Redis clear failed:', error);
+      return false;
     }
   }
   
+  /**
+   * Invalidate a namespace by incrementing its version
+   * @param {string} namespace - Namespace to invalidate
+   * @returns {Promise<string|null>} - New version number or null on failure
+   */
+  async invalidateNamespace(namespace) {
+    if (!this.redisAvailable) {
+      console.warn('[Cache Manager] Redis not available, cache operation skipped');
+      return null;
+    }
+
+    try {
+      return await redisCache.incrementNamespaceVersion(namespace);
+    } catch (error) {
+      console.error('[Cache Manager] Failed to invalidate namespace:', error);
+      return null;
+    }
+  }
+  
+  /**
+   * Store multiple items in cache at once
+   * @param {Array<{key: string, value: any, ttl?: number, namespace?: string}>} items - Items to cache
+   * @returns {Promise<boolean>} - Success status
+   */
+  async mset(items) {
+    if (!this.redisAvailable) {
+      console.warn('[Cache Manager] Redis not available, cache operation skipped');
+      return false;
+    }
+
+    try {
+      return await redisCache.mset(items);
+    } catch (error) {
+      console.error('[Cache Manager] Redis bulk set failed:', error);
+      return false;
+    }
+  }
+  
+  /**
+   * Get cache statistics
+   * @returns {Promise<object>} - Cache stats
+   */
   async getStats() {
-    if (this.redisAvailable) {
-      try {
-        const stats = await redisCache.getStats();
-        return {
-          ...stats,
-          backend: 'Redis (Upstash)',
-          fallbackAvailable: true
-        };
-      } catch (error) {
-        console.error('[Cache Manager] Redis getStats failed, using simple cache:', error);
-        this.redisAvailable = false;
-        const stats = simpleCache.getStats();
-        return {
-          ...stats,
-          backend: 'Simple (Fallback)',
-          redisError: error.message
-        };
-      }
-    } else {
-      const stats = simpleCache.getStats();
+    if (!this.redisAvailable) {
+      return {
+        hits: 0,
+        misses: 0,
+        sets: 0,
+        errors: 0,
+        hitRate: '0%',
+        size: 0,
+        backend: 'Redis (Upstash)',
+        redisAvailable: false,
+        fallbackAvailable: false
+      };
+    }
+
+    try {
+      const stats = await redisCache.getStats();
       return {
         ...stats,
-        backend: 'Simple (Fallback)',
-        redisAvailable: false
+        backend: 'Redis (Upstash)',
+        redisAvailable: true,
+        redisHealthy: true,
+        fallbackAvailable: false
+      };
+    } catch (error) {
+      console.error('[Cache Manager] Redis getStats failed:', error);
+      return {
+        hits: 0,
+        misses: 0,
+        sets: 0,
+        errors: 0,
+        hitRate: '0%',
+        size: 0,
+        backend: 'Redis (Upstash)',
+        redisAvailable: false,
+        redisHealthy: false,
+        fallbackAvailable: false,
+        redisError: error.message
       };
     }
   }
   
-  // Additional Redis-specific methods (fallback to no-op for simple cache)
+  /**
+   * Check if Redis is responding
+   * @returns {Promise<boolean>} - Redis health status
+   */
   async ping() {
-    if (this.redisAvailable) {
-      try {
-        return await redisCache.ping();
-      } catch (error) {
-        this.redisAvailable = false;
-        return false;
-      }
+    try {
+      return await redisCache.ping();
+    } catch (error) {
+      this.redisAvailable = false;
+      return false;
     }
-    return false; // Simple cache doesn't support ping
   }
   
-  async getKeyInfo(key) {
-    if (this.redisAvailable) {
-      try {
-        return await redisCache.getKeyInfo(key);
-      } catch (error) {
-        this.redisAvailable = false;
-        return { error: 'Redis not available' };
-      }
+  /**
+   * Get information about a specific cache key
+   * @param {string} key - Cache key
+   * @param {string} namespace - Optional namespace for the key
+   * @returns {Promise<object>} - Key information
+   */
+  async getKeyInfo(key, namespace = 'general') {
+    if (!this.redisAvailable) {
+      return { error: 'Redis not available' };
     }
-    return { error: 'Only available with Redis' };
+
+    try {
+      return await redisCache.getKeyInfo(key, { namespace, version: redisCache.globalVersion });
+    } catch (error) {
+      console.error('[Cache Manager] Redis getKeyInfo failed:', error);
+      return { error: 'Failed to get key info: ' + error.message };
+    }
   }
   
+  /**
+   * List cache keys matching a pattern
+   * @param {string} pattern - Pattern to match
+   * @returns {Promise<string[]>} - List of matching keys
+   */
   async listKeys(pattern = '*') {
-    if (this.redisAvailable) {
-      try {
-        return await redisCache.listKeys(pattern);
-      } catch (error) {
-        this.redisAvailable = false;
-        return [];
-      }
+    if (!this.redisAvailable) {
+      return [];
     }
-    return []; // Simple cache doesn't support key listing
+
+    try {
+      return await redisCache.listKeys(pattern);
+    } catch (error) {
+      console.error('[Cache Manager] Redis listKeys failed:', error);
+      return [];
+    }
   }
   
+  /**
+   * Destroy cache connections
+   */
   destroy() {
     if (this.redisAvailable) {
       redisCache.destroy();
     }
-    simpleCache.destroy();
   }
 }
 

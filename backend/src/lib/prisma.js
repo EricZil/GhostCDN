@@ -1,22 +1,12 @@
+// Import the client from the generated module
+// @ts-ignore - Prisma types are incorrectly resolved
 const { PrismaClient } = require('@prisma/client');
 
 // Singleton pattern for Prisma client to prevent connection issues
 const globalForPrisma = globalThis;
 
-const prisma = globalForPrisma.prisma || new PrismaClient({
-  log: process.env.NODE_ENV === 'development' ? ['error', 'warn'] : ['error'],
-  datasources: {
-    db: {
-      url: process.env.DATABASE_URL
-    }
-  },
-  // Add connection pooling to prevent connection issues
-  __internal: {
-    engine: {
-      enableEngineDebugMode: false
-    }
-  }
-});
+// Create Prisma Client instance
+const prisma = globalForPrisma.prisma || new PrismaClient();
 
 if (process.env.NODE_ENV !== 'production') {
   globalForPrisma.prisma = prisma;

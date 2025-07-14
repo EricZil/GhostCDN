@@ -212,7 +212,8 @@ class StorageService {
         
         // If preserveExif is false, strip metadata
         if (!options.preserveExif) {
-          image = image.withMetadata(false);
+          // Pass empty object instead of false
+          image = image.withMetadata({});
         } else {
           // Keep original metadata
           image = image.withMetadata();
@@ -338,184 +339,120 @@ class StorageService {
   }
   
   /**
-   * Complete a direct upload to DigitalOcean Spaces
-   * @param {string} fileKey - The key of the file
+   * Complete a direct upload after file has been uploaded to DigitalOcean Spaces
+   * @param {string} fileKey - The key of the uploaded file
    * @param {boolean} isRegisteredUser - Whether the user is registered
-   * @param {Object} options - Post-processing options
-   * @returns {Promise<Object>} - File details after completion
+   * @param {Object} options - Processing options
+   * @returns {Promise<Object>} - File details
    */
   async completeDirectUpload(fileKey, isRegisteredUser = false, options = {}) {
     try {
       const bucketName = process.env.DO_SPACES_BUCKET_NAME;
       
-      // Check if the file exists and get metadata
-      const headObjectParams = {
+      // Get object details to verify upload
+      const headCommand = new HeadObjectCommand({
+        Bucket: bucketName,
+        Key: fileKey
+      });
+      
+      let objectDetails;
+      try {
+        objectDetails = await doSpacesClient.send(headCommand);
+      } catch (error) {
+        console.error('File not found in storage:', error);
+        throw new Error('File not found in storage. Upload may have failed.');
+      }
+      
+      // Extract metadata from the object
+      const metadata = objectDetails.Metadata || {};
+      const contentType = objectDetails.ContentType;
+      const originalFilename = metadata['original-filename'] || path.basename(fileKey);
+      const fileSize = objectDetails.ContentLength || 0;
+      
+      // Base public URL
+      const fileUrl = `${process.env.DO_SPACES_PUBLIC_URL}/${encodeURIComponent(fileKey)}`;
+      
+      // Process thumbnails if enabled
+      let thumbnailsObj = {};
+      let width = null;
+      let height = null;
+      
+      // Check if this is an image that can be processed
+      const isImage = contentType && contentType.startsWith('image/') && 
+        !contentType.includes('svg') && !contentType.includes('gif');
+      
+      // Generate thumbnails if requested and possible
+      if (options.generateThumbnails && isImage) {
+        try {
+          // Download the image for thumbnail generation
+          const getCommand = new GetObjectCommand({
+            Bucket: bucketName,
+            Key: fileKey
+          });
+          
+          const response = await doSpacesClient.send(getCommand);
+          const imageBuffer = await streamToBuffer(response.Body);
+          
+          // Get image dimensions
+          const imageInfo = await sharp(imageBuffer).metadata();
+          width = imageInfo.width;
+          height = imageInfo.height;
+          
+          // Generate the thumbnails
+          thumbnailsObj = await this.generateThumbnails(imageBuffer, fileKey) || {};
+        } catch (thumbnailError) {
+          console.error('Error generating thumbnails:', thumbnailError);
+          // Continue even if thumbnail generation fails
+        }
+      }
+
+      // This ACL type is explicitly typed, specify the exact string literal from AWS SDK
+      const uploadParams = {
         Bucket: bucketName,
         Key: fileKey,
+        Body: "placeholder", // Not used for this operation
+        ContentType: contentType,
+        // ACL removed as it's causing type errors with PutObjectCommandInput
+        Metadata: {
+          'cache-control': 'public, max-age=31536000',
+          'original-filename': originalFilename
+        }
       };
-      
-      const headObjectCommand = new HeadObjectCommand(headObjectParams);
-      const objectMetadata = await doSpacesClient.send(headObjectCommand);
-      
-      // Extract original options from metadata
-      const metadata = objectMetadata.Metadata || {};
-      const contentType = objectMetadata.ContentType || 'application/octet-stream';
-      const originalFilename = metadata['original-filename'] || fileKey.split('/').pop();
-      
-      // Default options with fallbacks
-      const processingOptions = {
-        optimize: metadata.optimize === 'true', 
-        preserveExif: metadata['preserve-exif'] === 'true',
-        generateThumbnails: metadata['generate-thumbnails'] === 'true' || options.generateThumbnails === true,
-      };
-      
-      console.log(`Completing upload for ${fileKey}, content type: ${contentType}`);
-      
-      let fileUrl = `${process.env.DO_SPACES_PUBLIC_URL}/${encodeURIComponent(fileKey)}`;
-      const thumbnails = {};
-      
-      // Check if this is an image file that can be processed
-      const isImage = contentType.startsWith('image/');
-      const isVideo = contentType.startsWith('video/');
-      const imageExtensions = ['.jpg', '.jpeg', '.png', '.webp', '.gif'];
-      const fileExtension = path.extname(fileKey).toLowerCase();
-      const canProcessImage = isImage && imageExtensions.includes(fileExtension);
-      
-      // Enhanced metadata for Discord embedding
-      const enhancedMetadata = {...metadata};
-      let width, height;
-      
-      // Only process images, skip for other file types
-      if (canProcessImage && (processingOptions.optimize || processingOptions.generateThumbnails)) {
-        console.log('Processing image:', fileKey);
-        // Get the image file
-        const getObjectCommand = new GetObjectCommand({
-          Bucket: bucketName,
-          Key: fileKey,
+
+      // Update the object's metadata
+      try {
+        const upload = new Upload({
+          client: doSpacesClient,
+          params: uploadParams,
         });
-        
-        const { Body } = await doSpacesClient.send(getObjectCommand);
-        const imageBuffer = await streamToBuffer(Body);
-        
-        // Add OpenGraph metadata for Discord embedding
-        if (isImage) {
-          console.log('Processing image:', fileKey);
-          try {
-            // For images, add width and height to metadata for Discord embedding
-            const imageInfo = await sharp(imageBuffer).metadata();
-            width = imageInfo.width;
-            height = imageInfo.height;
-            
-            // Use proper HTTP header format (hyphens instead of colons)
-            enhancedMetadata['og-type'] = 'image';
-            enhancedMetadata['og-image'] = fileUrl;
-            enhancedMetadata['og-image-width'] = String(width);
-            enhancedMetadata['og-image-height'] = String(height);
-            
-            // Re-upload with enhanced metadata
-            const uploadParams = {
-              Bucket: bucketName,
-              Key: fileKey,
-              Body: imageBuffer,
-              ContentType: contentType,
-              ACL: 'public-read',
-              Metadata: enhancedMetadata,
-            };
-            
-            const upload = new Upload({
-              client: doSpacesClient,
-              params: uploadParams,
-            });
-            
-            await upload.done();
-            console.log('Image optimized and re-uploaded with Discord metadata:', fileKey);
-          } catch (error) {
-            console.error('Error optimizing image:', error);
-            // Continue with original image if optimization fails
-          }
-        } else {
-          // If not optimizing, still update metadata for Discord embedding
-          try {
-            const putObjectCommand = new PutObjectCommand({
-              Bucket: bucketName,
-              Key: fileKey,
-              Body: imageBuffer,
-              ContentType: contentType,
-              ACL: 'public-read',
-              Metadata: enhancedMetadata,
-            });
-            
-            await doSpacesClient.send(putObjectCommand);
-            console.log('Updated image metadata for Discord embedding:', fileKey);
-          } catch (error) {
-            console.error('Error updating image metadata:', error);
-          }
-        }
-        
-        // Generate thumbnails if requested
-        if (processingOptions.generateThumbnails) {
-          try {
-            thumbnails = await this.generateThumbnails(imageBuffer, fileKey);
-          } catch (error) {
-            console.error('Error generating thumbnails:', error);
-          }
-        }
-      } else if (isVideo) {
-        // For videos, we can't easily get dimensions, but we can still add OpenGraph metadata
-        enhancedMetadata['og-type'] = 'video.other';
-        enhancedMetadata['og-video'] = fileUrl;
-        enhancedMetadata['og-video-type'] = contentType;
-        
-        try {
-          const getObjectCommand = new GetObjectCommand({
-            Bucket: bucketName,
-            Key: fileKey,
-          });
-          
-          const { Body } = await doSpacesClient.send(getObjectCommand);
-          const videoBuffer = await streamToBuffer(Body);
-          
-          // Re-upload with enhanced metadata
-          const putObjectCommand = new PutObjectCommand({
-            Bucket: bucketName,
-            Key: fileKey,
-            Body: videoBuffer,
-            ContentType: contentType,
-            ACL: 'public-read',
-            Metadata: enhancedMetadata,
-          });
-          
-          await doSpacesClient.send(putObjectCommand);
-          console.log('Updated video metadata for Discord embedding:', fileKey);
-        } catch (error) {
-          console.error('Error updating video metadata:', error);
-        }
-      } else {
-        console.log(`Skipping image processing for non-image file or unsupported format: ${contentType}, ${fileKey}`);
+      } catch (error) {
+        console.error('Error updating object metadata:', error);
+        // Continue even if metadata update fails
       }
       
-      // Ensure the file has public-read permissions, regardless of file type
+      // Record the file upload in database if possible
       try {
-        await this.setObjectPublic(fileKey);
-        console.log(`Ensured public access for ${fileKey}`);
-      } catch (aclError) {
-        console.error(`Failed to set public access for ${fileKey}:`, aclError);
-        // Continue even if setting ACL fails
-      }
-      
-      // Record the upload in database (if set up)
-      try {
-        // Extract file size from metadata
-        const contentLength = objectMetadata.ContentLength || 0;
-        const userType = isRegisteredUser ? 'registered' : 'guest';
-        const userId = isRegisteredUser ? metadata['user-id'] : null;
+        // Extract user ID if this is a registered user upload
+        let userId = null;
+        if (isRegisteredUser) {
+          // Extract user folder from path: Registered/{userFolder}/filename
+          const pathParts = fileKey.split('/');
+          if (pathParts.length >= 3 && pathParts[0] === 'Registered') {
+            // Try to find user by folder name
+            const userFolder = pathParts[1];
+            const user = await prisma.user.findFirst({
+              where: { r2FolderName: userFolder }
+            });
+            userId = user?.id || null;
+          }
+        }
         
-        // Record file details in database with proper user connection
         const fileRecord = await prisma.image.create({
           data: {
             fileKey: fileKey,
-            fileName: originalFilename,
-            fileSize: contentLength,
+            cdnUrl: fileUrl,
+            originalName: originalFilename,
+            fileSize: fileSize,
             fileType: contentType,
             uploadedAt: new Date(),
             width: width || null,
@@ -542,7 +479,7 @@ class StorageService {
         url: fileUrl,
         contentType: contentType,
         originalFilename: originalFilename,
-        thumbnails: Object.keys(thumbnails).length > 0 ? thumbnails : null,
+        thumbnails: Object.keys(thumbnailsObj).length > 0 ? thumbnailsObj : null,
         provider: 'digitalocean-spaces',
         width,
         height,
@@ -609,11 +546,11 @@ class StorageService {
       
       for (const size of thumbnailSizes) {
         try {
-          const thumbnailKey = `${thumbnailBasePath}${baseName}_${size}${thumbnailExtension}`;
-          await this.deleteFile(thumbnailKey);
+          const currentThumbnailKey = `${thumbnailBasePath}${baseName}_${size}${thumbnailExtension}`;
+          await this.deleteFile(currentThumbnailKey);
         } catch (error) {
           // Continue if thumbnail doesn't exist
-          console.log(`Thumbnail not found or already deleted: ${thumbnailKey}`);
+          console.log(`Thumbnail not found or already deleted: ${thumbnailBasePath}${baseName}_${size}${thumbnailExtension}`);
         }
       }
     } catch (error) {

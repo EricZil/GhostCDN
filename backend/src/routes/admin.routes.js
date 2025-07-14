@@ -272,8 +272,8 @@ router.get('/users', async (req, res) => {
           }
         },
         orderBy: { createdAt: 'desc' },
-        skip: parseInt(skip),
-        take: parseInt(limit)
+        skip: Number(skip),
+        take: Number(limit)
       }),
       prisma.user.count({ where })
     ]);
@@ -858,8 +858,8 @@ router.get('/files', async (req, res) => {
           }
         },
         orderBy: { uploadedAt: 'desc' },
-        skip: parseInt(skip),
-        take: parseInt(limit)
+        skip: Number(skip),
+        take: Number(limit)
       }),
       prisma.image.count({ where }),
       
@@ -1131,8 +1131,8 @@ router.get('/logs', async (req, res) => {
       prisma.systemLog.findMany({
         where,
         orderBy: { createdAt: 'desc' },
-        skip: parseInt(skip),
-        take: parseInt(limit),
+        skip: Number(skip),
+        take: Number(limit),
         include: {
           user: {
             select: { name: true, email: true }
@@ -1595,8 +1595,8 @@ router.get('/guest-uploads', async (req, res) => {
       prisma.guestUpload.findMany({
         where,
         orderBy: { uploadedAt: 'desc' },
-        skip: parseInt(skip),
-        take: parseInt(limit)
+        skip: Number(skip),
+        take: Number(limit)
       }),
       prisma.guestUpload.count({ where })
     ]);
@@ -1606,7 +1606,7 @@ router.get('/guest-uploads', async (req, res) => {
       status: upload.isDeleted ? 'deleted' : 
               (upload.expiresAt < now ? 'expired' : 'active'),
       daysUntilExpiry: upload.isDeleted ? null : 
-                      Math.ceil((upload.expiresAt - now) / (1000 * 60 * 60 * 24))
+                      Math.ceil((upload.expiresAt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
     }));
 
     res.json({
