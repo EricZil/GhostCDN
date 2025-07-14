@@ -79,7 +79,7 @@ export default function UploadForm({
         <div className="flex flex-col h-full">
           <div className="flex flex-row h-full items-stretch">
             <div className="flex-grow">
-              <FilePreview preview={preview} />
+              <FilePreview preview={preview} file={file} />
             </div>
             
             <div className="flex-shrink-0">

@@ -325,213 +325,151 @@ class StorageService {
   }
   
   /**
-   * Complete a direct upload - perform any post-processing needed and save to database
-   * @param {string} fileKey - The key of the uploaded file
+   * Complete a direct upload to DigitalOcean Spaces
+   * @param {string} fileKey - The key of the file
+   * @param {boolean} isRegisteredUser - Whether the user is registered
    * @param {Object} options - Post-processing options
-   * @returns {Promise<Object>} - Result with file URLs
+   * @returns {Promise<Object>} - File details after completion
    */
-  async completeDirectUpload(fileKey, options = {}) {
+  async completeDirectUpload(fileKey, isRegisteredUser = false, options = {}) {
     try {
       const bucketName = process.env.DO_SPACES_BUCKET_NAME;
       
-      // Check if the file exists and get its metadata
-      const headCommand = new HeadObjectCommand({
+      // Check if the file exists and get metadata
+      const headObjectParams = {
         Bucket: bucketName,
         Key: fileKey,
-      });
+      };
       
-      let fileMetadata;
-      try {
-        fileMetadata = await doSpacesClient.send(headCommand);
-      } catch (error) {
-        throw new Error(`File not found: ${fileKey}`);
-      }
+      const headObjectCommand = new HeadObjectCommand(headObjectParams);
+      const objectMetadata = await doSpacesClient.send(headObjectCommand);
       
-      // Ensure the file is publicly accessible
-      await this.setObjectPublic(fileKey);
+      // Extract original options from metadata
+      const metadata = objectMetadata.Metadata || {};
+      const contentType = objectMetadata.ContentType || 'application/octet-stream';
+      const originalFilename = metadata['original-filename'] || fileKey.split('/').pop();
       
-      // Get processing options from metadata or use provided options
-      const metadata = fileMetadata.Metadata || {};
+      // Default options with fallbacks
       const processingOptions = {
-        optimize: (metadata['optimize'] === 'true' || options.optimize === true) && !options.skipOptimization,
-        preserveExif: metadata['preserve-exif'] === 'true' || options.preserveExif === true,
+        optimize: metadata.optimize === 'true', 
+        preserveExif: metadata['preserve-exif'] === 'true',
         generateThumbnails: metadata['generate-thumbnails'] === 'true' || options.generateThumbnails === true,
       };
       
-      // Check if this is an image that needs processing
-      const fileExtension = path.extname(fileKey).toLowerCase();
-      const isImage = /\.(jpg|jpeg|png|gif|webp)$/i.test(fileExtension);
+      console.log(`Completing upload for ${fileKey}, content type: ${contentType}`);
       
-      // Download the file for processing (needed for both optimization and thumbnails)
-      let imageBuffer = null;
-      if (isImage && (processingOptions.optimize || processingOptions.generateThumbnails)) {
-        const getCommand = new GetObjectCommand({
+      let fileUrl = `${process.env.DO_SPACES_PUBLIC_URL}/${encodeURIComponent(fileKey)}`;
+      const thumbnails = {};
+      
+      // Check if this is an image file that can be processed
+      const isImage = contentType.startsWith('image/');
+      const imageExtensions = ['.jpg', '.jpeg', '.png', '.webp', '.gif'];
+      const fileExtension = path.extname(fileKey).toLowerCase();
+      const canProcessImage = isImage && imageExtensions.includes(fileExtension);
+      
+      // Only process images, skip for other file types
+      if (canProcessImage && (processingOptions.optimize || processingOptions.generateThumbnails)) {
+        console.log('Processing image:', fileKey);
+        // Get the image file
+        const getObjectCommand = new GetObjectCommand({
           Bucket: bucketName,
           Key: fileKey,
         });
         
-        const response = await doSpacesClient.send(getCommand);
-        imageBuffer = await streamToBuffer(response.Body);
-      }
-      
-      let processedFileKey = fileKey;
-      let thumbnails = null;
-      
-      // Process image optimization and thumbnails in parallel
-      if (isImage && imageBuffer) {
-        const tasks = [];
+        const { Body } = await doSpacesClient.send(getObjectCommand);
+        const imageBuffer = await streamToBuffer(Body);
         
-        // Add optimization task
         if (processingOptions.optimize) {
-          tasks.push(
-            this.processImage(imageBuffer, fileKey, processingOptions)
-              .then(async (processedBuffer) => {
-                const putCommand = new PutObjectCommand({
-                  Bucket: bucketName,
-                  Key: fileKey,
-                  Body: processedBuffer,
-                  ContentType: fileMetadata.ContentType,
-                  ACL: 'public-read',
-                  Metadata: metadata,
-                });
-                
-                await doSpacesClient.send(putCommand);
-                console.log(`Optimized image: ${fileKey}`);
-                return { type: 'optimization', success: true };
-              })
-              .catch((error) => {
-                console.error('Error optimizing image:', error);
-                return { type: 'optimization', success: false, error };
-              })
-          );
-        }
-        
-        // Add thumbnail generation task
-        if (processingOptions.generateThumbnails) {
-          tasks.push(
-            this.generateThumbnails(imageBuffer, fileKey)
-              .then((result) => ({ type: 'thumbnails', success: true, data: result }))
-              .catch((error) => {
-                console.error('Error generating thumbnails:', error);
-                return { type: 'thumbnails', success: false, error };
-              })
-          );
-        }
-        
-        // Execute all tasks in parallel
-        if (tasks.length > 0) {
-          const results = await Promise.all(tasks);
-          
-          // Extract thumbnail results
-          const thumbnailResult = results.find(r => r.type === 'thumbnails');
-          if (thumbnailResult && thumbnailResult.success) {
-            thumbnails = thumbnailResult.data;
-          }
-        }
-      }
-      
-      // Generate final URLs
-      const encodedFileKey = encodeURIComponent(processedFileKey);
-      const cdnUrl = `${process.env.DO_SPACES_PUBLIC_URL}/${encodedFileKey}`;
-      
-      // Save to database - handle both registered users and guests
-      let dbRecord = null;
-      try {
-        // Get image dimensions if it's an image
-        let width = null;
-        let height = null;
-        if (isImage && imageBuffer) {
           try {
-            const imageMetadata = await sharp(imageBuffer).metadata();
-            width = imageMetadata.width || null;
-            height = imageMetadata.height || null;
-          } catch (err) {
-            console.warn('Could not get image dimensions:', err.message);
+            // Process the image based on options
+            const processedBuffer = await this.processImage(imageBuffer, fileKey, {
+              optimize: processingOptions.optimize,
+              preserveExif: processingOptions.preserveExif
+            });
+            
+            if (processedBuffer) {
+              // Re-upload the processed image
+              const uploadParams = {
+                Bucket: bucketName,
+                Key: fileKey,
+                Body: processedBuffer,
+                ContentType: contentType,
+                ACL: 'public-read',
+                Metadata: metadata,
+              };
+              
+              const upload = new Upload({
+                client: doSpacesClient,
+                params: uploadParams,
+              });
+              
+              await upload.done();
+              console.log('Image optimized and re-uploaded:', fileKey);
+            }
+          } catch (error) {
+            console.error('Error optimizing image:', error);
+            // Continue with original image if optimization fails
           }
         }
         
-        if (metadata['user-type'] === 'registered' && metadata['user-folder']) {
-          // Handle registered user uploads
-          const userFolderName = metadata['user-folder'];
-          const user = await prisma.user.findFirst({
-            where: { r2FolderName: userFolderName }
-          });
-          
-          if (user) {
-            // Save the upload to the database
-            dbRecord = await prisma.image.create({
-              data: {
-                userId: user.id,
-                fileName: metadata['original-filename'] || path.basename(fileKey),
-                fileKey: processedFileKey,
-                fileSize: fileMetadata.ContentLength || 0,
-                fileType: fileExtension.replace('.', '').toUpperCase(),
-                mimeType: fileMetadata.ContentType,
-                width,
-                height,
-                uploadedAt: new Date(),
-              }
-            });
-            
-            // Log the upload activity
-            await prisma.activity.create({
-              data: {
-                userId: user.id,
-                type: 'UPLOAD',
-                message: `Uploaded file: ${metadata['original-filename'] || path.basename(fileKey)}`,
-                metadata: JSON.stringify({
-                  fileKey: processedFileKey,
-                  fileSize: fileMetadata.ContentLength || 0,
-                  fileType: fileExtension.replace('.', '').toUpperCase(),
-                  processed: isImage && processingOptions.optimize,
-                  thumbnails: thumbnails ? Object.keys(thumbnails) : null
-                })
-              }
-            });
-            
-            console.log(`Saved upload record to database for user ${user.email}: ${processedFileKey}`);
-          } else {
-            console.warn(`User not found for folder: ${userFolderName}`);
+        // Generate thumbnails if requested
+        if (processingOptions.generateThumbnails) {
+          try {
+            thumbnails = await this.generateThumbnails(imageBuffer, fileKey);
+          } catch (error) {
+            console.error('Error generating thumbnails:', error);
           }
-        } else if (metadata['user-type'] === 'guest') {
-          // Handle guest uploads - track for automatic cleanup
-          const now = new Date();
-          const expiresAt = new Date(now.getTime() + (14 * 24 * 60 * 60 * 1000)); // 14 days from now
-          
-          dbRecord = await prisma.guestUpload.create({
-            data: {
-              fileKey: processedFileKey,
-              fileName: metadata['original-filename'] || path.basename(fileKey),
-              fileSize: fileMetadata.ContentLength || 0,
-              fileType: fileExtension.replace('.', '').toUpperCase(),
-              mimeType: fileMetadata.ContentType,
-              width,
-              height,
-              uploadedAt: now,
-              expiresAt: expiresAt,
-              // IP address and user agent tracking can be added when needed
-            }
-          });
-          
-          console.log(`Saved guest upload record to database: ${processedFileKey} (expires: ${expiresAt.toISOString()})`);
         }
-      } catch (dbError) {
-        console.error('Error saving to database:', dbError);
-        // Don't throw error - file upload was successful even if DB save failed
+      } else {
+        console.log(`Skipping image processing for non-image file or unsupported format: ${contentType}, ${fileKey}`);
       }
       
+      // Ensure the file has public-read permissions, regardless of file type
+      try {
+        await this.setObjectPublic(fileKey);
+        console.log(`Ensured public access for ${fileKey}`);
+      } catch (aclError) {
+        console.error(`Failed to set public access for ${fileKey}:`, aclError);
+        // Continue even if setting ACL fails
+      }
+      
+      // Record the upload in database (if set up)
+      try {
+        // Extract file size from metadata
+        const contentLength = objectMetadata.ContentLength || 0;
+        const userType = isRegisteredUser ? 'registered' : 'guest';
+        
+        // Record file details in database (simplified example)
+        const fileRecord = await prisma.file.create({
+          data: {
+            key: fileKey,
+            originalName: originalFilename,
+            contentType: contentType,
+            size: contentLength,
+            url: fileUrl,
+            userType: userType,
+            userId: isRegisteredUser ? metadata['user-id'] || null : null,
+            thumbnails: thumbnails ? JSON.stringify(thumbnails) : null,
+          },
+        });
+        
+        console.log(`File recorded in database: ${fileRecord.id}`);
+      } catch (dbError) {
+        console.error('Error recording file in database:', dbError);
+        // Continue even if database recording fails
+      }
+      
+      // Return the file details
       return {
-        success: true,
-        url: cdnUrl,
-        key: processedFileKey,
-        provider: 'digitalocean-spaces',
-        thumbnails,
-        processed: isImage && processingOptions.optimize,
-        optimized: isImage && processingOptions.optimize,
-        dbRecord: dbRecord ? { id: dbRecord.id, fileName: dbRecord.fileName } : null,
+        key: fileKey,
+        url: fileUrl,
+        contentType: contentType,
+        originalFilename: originalFilename,
+        thumbnails: Object.keys(thumbnails).length > 0 ? thumbnails : null,
+        provider: 'digitalocean-spaces'
       };
     } catch (error) {
-      console.error('Error completing upload:', error);
+      console.error('Error completing direct upload:', error);
       throw error;
     }
   }

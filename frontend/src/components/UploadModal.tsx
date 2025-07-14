@@ -91,12 +91,28 @@ export default function UploadModal({ isOpen, onClose, initialFile = null, onOpe
       return;
     }
     
-    if (!newFile.type.startsWith('image/')) {
+    // Supported file types
+    const supportedTypes: Record<string, string[]> = {
+      'image': ['jpeg', 'png', 'gif', 'webp', 'svg+xml'],
+      'video': ['mp4', 'webm', 'ogg', 'quicktime', 'x-matroska', 'x-msvideo', 'x-ms-wmv'],
+      'audio': ['mpeg', 'mp3', 'ogg', 'wav', 'x-wav', 'webm'],
+      'application': ['pdf', 'msword', 'vnd.openxmlformats-officedocument.wordprocessingml.document', 
+                      'vnd.ms-excel', 'vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                      'vnd.ms-powerpoint', 'vnd.openxmlformats-officedocument.presentationml.presentation']
+    };
+    
+    // Check if file type is supported
+    const [mainType, subType] = newFile.type.split('/');
+    const isSupported = mainType && 
+                        (mainType in supportedTypes) && 
+                        (supportedTypes[mainType].includes(subType) || mainType === 'image' || mainType === 'video');
+    
+    if (!isSupported && newFile.type !== '') {
       setNotification({
         isVisible: true,
         type: 'error',
-        title: 'Invalid File Type',
-        message: 'Please upload an image file (JPEG, PNG, WebP, GIF)'
+        title: 'Unsupported File Type',
+        message: 'Please upload a supported file type (images, videos, documents, audio)'
       });
       return;
     }
@@ -141,13 +157,16 @@ export default function UploadModal({ isOpen, onClose, initialFile = null, onOpe
       };
       img.src = result;
       
-      if (optimizeImage) {
+      if (optimizeImage && newFile.type.startsWith('image/')) {
         try {
           const estimate = estimateOptimization(newFile);
           setOptimizationPreview(estimate);
         } catch {
           // Handle estimation error silently
         }
+      } else {
+        // No optimization preview for non-image files
+        setOptimizationPreview(null);
       }
     };
     reader.readAsDataURL(newFile);

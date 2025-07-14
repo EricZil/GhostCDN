@@ -40,7 +40,7 @@ export default function DropZone({
         ref={fileInputRef}
         onChange={(e) => e.target.files && e.target.files[0] && handleFile(e.target.files[0])}
         className="hidden"
-        accept="image/*"
+        accept="*/*"
       />
       
       <div className="flex flex-col items-center justify-center py-8 flex-grow">
@@ -51,7 +51,7 @@ export default function DropZone({
           </svg>
         </div>
         <h2 className="text-3xl font-medium text-white mb-4">
-          Drop your image here
+          Drop your file here
         </h2>
         <p className="mb-4 text-xl text-gray-400">
           or <button 
@@ -69,8 +69,8 @@ export default function DropZone({
         </div>
         <p className="text-base text-gray-500">
           {isAuthenticated 
-            ? 'Images up to 100MB for registered users' 
-            : 'Images up to 10MB for guests • No time limit with an account'}
+            ? 'Files up to 100MB for registered users' 
+            : 'Files up to 10MB for guests • No time limit with an account'}
         </p>
       </div>
     </div>

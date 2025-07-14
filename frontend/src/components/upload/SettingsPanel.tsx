@@ -1,6 +1,7 @@
 "use client";
 
 import { formatFileSize } from "@/lib/utils";
+import { useEffect, useState } from "react";
 
 interface SettingsPanelProps {
   fileName: string;
@@ -46,6 +47,35 @@ export default function SettingsPanel({
   isUploading,
   progress
 }: SettingsPanelProps) {
+  const [isImageFile, setIsImageFile] = useState(false);
+  const [fileTypeLabel, setFileTypeLabel] = useState('File');
+
+  useEffect(() => {
+    // Check if the file is an image
+    if (file) {
+      setIsImageFile(file.type.startsWith('image/'));
+      
+      // Determine file type label
+      if (file.type.startsWith('image/')) {
+        setFileTypeLabel('Image');
+      } else if (file.type.startsWith('video/')) {
+        setFileTypeLabel('Video');
+      } else if (file.type.startsWith('audio/')) {
+        setFileTypeLabel('Audio');
+      } else if (file.type === 'application/pdf') {
+        setFileTypeLabel('PDF');
+      } else if (file.type.includes('spreadsheet') || file.name.endsWith('.xlsx') || file.name.endsWith('.xls') || file.name.endsWith('.csv')) {
+        setFileTypeLabel('Spreadsheet');
+      } else if (file.type.includes('document') || file.name.endsWith('.docx') || file.name.endsWith('.doc')) {
+        setFileTypeLabel('Document');
+      } else if (file.type.includes('presentation') || file.name.endsWith('.pptx') || file.name.endsWith('.ppt')) {
+        setFileTypeLabel('Presentation');
+      } else {
+        setFileTypeLabel('File');
+      }
+    }
+  }, [file]);
+
   // Extract base name and extension from fileName
   const getFileNameParts = (fullName: string) => {
     const lastDotIndex = fullName.lastIndexOf('.');
@@ -103,15 +133,25 @@ export default function SettingsPanel({
                 {file ? `${(file.size / 1024 / 1024).toFixed(2)} MB` : ''}
               </div>
             </div>
-          </div>
-          
-          {/* Dimensions */}
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">Dimensions</label>
-            <div className="px-4 py-3 bg-black/50 border border-gray-800 rounded-xl text-base text-white">
-              {imageDimensions.width > 0 ? `${imageDimensions.width} × ${imageDimensions.height} px` : ''}
+            
+            {/* File type */}
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">Type</label>
+              <div className="px-4 py-3 bg-black/50 border border-gray-800 rounded-xl text-base text-white">
+                {fileTypeLabel}
+              </div>
             </div>
           </div>
+          
+          {/* Dimensions - only show for image files */}
+          {isImageFile && imageDimensions.width > 0 && (
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">Dimensions</label>
+              <div className="px-4 py-3 bg-black/50 border border-gray-800 rounded-xl text-base text-white">
+                {`${imageDimensions.width} × ${imageDimensions.height} px`}
+              </div>
+            </div>
+          )}
         </div>
       </div>
       
@@ -144,25 +184,27 @@ export default function SettingsPanel({
           </label>
         </div>
 
-        {/* Optimize toggle */}
-        <div className="flex items-center justify-between mb-3 p-3 bg-black/30 rounded-xl border border-gray-800/50 hover:border-purple-500/30 transition-all duration-200">
-          <div>
-            <div className="text-white font-medium text-base">Optimize</div>
-            <div className="text-gray-400 text-sm">Smart client + server compression</div>
+        {/* Optimize toggle - only for image files */}
+        {isImageFile && (
+          <div className="flex items-center justify-between mb-3 p-3 bg-black/30 rounded-xl border border-gray-800/50 hover:border-purple-500/30 transition-all duration-200">
+            <div>
+              <div className="text-white font-medium text-base">Optimize</div>
+              <div className="text-gray-400 text-sm">Smart client + server compression</div>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input 
+                type="checkbox" 
+                className="sr-only peer" 
+                checked={optimizeImage}
+                onChange={() => setOptimizeImage(!optimizeImage)}
+              />
+              <div className="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-gradient-to-r peer-checked:from-purple-600 peer-checked:to-pink-600"></div>
+            </label>
           </div>
-          <label className="relative inline-flex items-center cursor-pointer">
-            <input 
-              type="checkbox" 
-              className="sr-only peer" 
-              checked={optimizeImage}
-              onChange={() => setOptimizeImage(!optimizeImage)}
-            />
-            <div className="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-gradient-to-r peer-checked:from-purple-600 peer-checked:to-pink-600"></div>
-          </label>
-        </div>
+        )}
         
-        {/* Optimization Preview */}
-        {optimizationPreview && file && optimizeImage && (
+        {/* Optimization Preview - only for image files */}
+        {isImageFile && optimizationPreview && file && optimizeImage && (
           <div className="mb-3 p-3 bg-[rgba(20,20,30,0.5)] rounded-lg">
             <h4 className="text-sm font-medium text-white mb-2">Optimization Preview</h4>
             <div className="grid grid-cols-2 gap-1 text-xs mb-2">
@@ -186,39 +228,43 @@ export default function SettingsPanel({
           </div>
         )}
         
-        {/* Preserve EXIF toggle */}
-        <div className="flex items-center justify-between mb-3 p-3 bg-black/30 rounded-xl border border-gray-800/50 hover:border-purple-500/30 transition-all duration-200">
-          <div>
-            <div className="text-white font-medium text-base">Keep EXIF</div>
-            <div className="text-gray-400 text-sm">Preserve metadata</div>
+        {/* Preserve EXIF toggle - only for image files */}
+        {isImageFile && (
+          <div className="flex items-center justify-between mb-3 p-3 bg-black/30 rounded-xl border border-gray-800/50 hover:border-purple-500/30 transition-all duration-200">
+            <div>
+              <div className="text-white font-medium text-base">Keep EXIF</div>
+              <div className="text-gray-400 text-sm">Preserve metadata</div>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input 
+                type="checkbox" 
+                className="sr-only peer" 
+                checked={preserveExif}
+                onChange={() => setPreserveExif(!preserveExif)}
+              />
+              <div className="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-gradient-to-r peer-checked:from-purple-600 peer-checked:to-pink-600"></div>
+            </label>
           </div>
-          <label className="relative inline-flex items-center cursor-pointer">
-            <input 
-              type="checkbox" 
-              className="sr-only peer" 
-              checked={preserveExif}
-              onChange={() => setPreserveExif(!preserveExif)}
-            />
-            <div className="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-gradient-to-r peer-checked:from-purple-600 peer-checked:to-pink-600"></div>
-          </label>
-        </div>
+        )}
         
-        {/* Generate Thumbnails toggle */}
-        <div className="flex items-center justify-between p-3 bg-black/30 rounded-xl border border-gray-800/50 hover:border-purple-500/30 transition-all duration-200">
-          <div>
-            <div className="text-white font-medium text-base">Thumbnails</div>
-            <div className="text-gray-400 text-sm">Create smaller versions</div>
+        {/* Generate Thumbnails toggle - only for image files */}
+        {isImageFile && (
+          <div className="flex items-center justify-between p-3 bg-black/30 rounded-xl border border-gray-800/50 hover:border-purple-500/30 transition-all duration-200">
+            <div>
+              <div className="text-white font-medium text-base">Thumbnails</div>
+              <div className="text-gray-400 text-sm">Create smaller versions</div>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input 
+                type="checkbox" 
+                className="sr-only peer" 
+                checked={generateThumbnails}
+                onChange={() => setGenerateThumbnails(!generateThumbnails)}
+              />
+              <div className="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-gradient-to-r peer-checked:from-purple-600 peer-checked:to-pink-600"></div>
+            </label>
           </div>
-          <label className="relative inline-flex items-center cursor-pointer">
-            <input 
-              type="checkbox" 
-              className="sr-only peer" 
-              checked={generateThumbnails}
-              onChange={() => setGenerateThumbnails(!generateThumbnails)}
-            />
-            <div className="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-gradient-to-r peer-checked:from-purple-600 peer-checked:to-pink-600"></div>
-          </label>
-        </div>
+        )}
       </div>
       
       {/* Action buttons - at the bottom of the panel */}
