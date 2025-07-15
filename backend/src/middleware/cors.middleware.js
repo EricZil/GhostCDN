@@ -14,7 +14,8 @@ const corsOptions = {
       // Production domains
       'https://ghostcdn.xyz',
       'https://api.ghostcdn.xyz',
-      'https://q1.api.ghostcdn.xyz',
+      'https://q1.ghostcdn.xyz', // Q1 Pre-Release Frontend
+      'https://q1.api.ghostcdn.xyz', // Q1 Pre-Release API
       // Gravatar for profile images
       'https://www.gravatar.com',
       'https://gravatar.com',
