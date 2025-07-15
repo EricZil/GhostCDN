@@ -67,6 +67,14 @@ class UploadController {
         });
       }
       
+      // Check if user is authenticated
+      if (!req.user) {
+        return res.status(401).json({
+          success: false,
+          message: 'Authentication required for user uploads'
+        });
+      }
+      
       // Validate file size for registered users (100MB limit)
       const maxSize = 100 * 1024 * 1024; // 100MB
       if (fileSize > maxSize) {
@@ -84,10 +92,9 @@ class UploadController {
         generateThumbnails: req.body.generateThumbnails === 'true' || req.body.generateThumbnails === true, // Default to false if not specified
       };
       
-      // Here we would verify the user is authenticated
-      // For now, we'll assume the user is authenticated if they hit this endpoint
+      // Use the authenticated user's r2FolderName for the upload path
       const fileInfo = { filename, contentType, fileSize };
-      const result = await storageService.getPresignedUrl(fileInfo, true, null, uploadOptions);
+      const result = await storageService.getPresignedUrl(fileInfo, true, req.user.r2FolderName, uploadOptions);
       
       return res.status(200).json({
         success: true,
@@ -110,14 +117,17 @@ class UploadController {
    */
   async completeGuestUpload(req, res) {
     try {
-      const { fileKey } = req.params;
+      const { fileKey: encodedFileKey } = req.params;
       
-      if (!fileKey) {
+      if (!encodedFileKey) {
         return res.status(400).json({
           success: false,
           message: 'Missing file key'
         });
       }
+      
+      // Decode the URL-encoded fileKey
+      const fileKey = decodeURIComponent(encodedFileKey);
       
       // Extract post-processing options from the request body
       const options = {
@@ -149,14 +159,17 @@ class UploadController {
    */
   async completeUserUpload(req, res) {
     try {
-      const { fileKey } = req.params;
+      const { fileKey: encodedFileKey } = req.params;
       
-      if (!fileKey) {
+      if (!encodedFileKey) {
         return res.status(400).json({
           success: false,
           message: 'Missing file key'
         });
       }
+      
+      // Decode the URL-encoded fileKey
+      const fileKey = decodeURIComponent(encodedFileKey);
       
       // Extract post-processing options from the request body
       const options = {
@@ -165,9 +178,15 @@ class UploadController {
       
       // Debug: console.log('Complete user upload options:', options);
       
-      // Here we would verify the user is authenticated
-      // For now, we'll assume the user is authenticated if they hit this endpoint
-      const result = await storageService.completeDirectUpload(fileKey, true, options);
+      // Check if user is authenticated
+      if (!req.user) {
+        return res.status(401).json({
+          success: false,
+          message: 'Authentication required for user uploads'
+        });
+      }
+      
+      const result = await storageService.completeDirectUpload(fileKey, true, options, req.user);
       
       return res.status(200).json({
         success: true,
@@ -190,14 +209,17 @@ class UploadController {
    */
   async deleteFile(req, res) {
     try {
-      const { fileKey } = req.params;
+      const { fileKey: encodedFileKey } = req.params;
       
-      if (!fileKey) {
+      if (!encodedFileKey) {
         return res.status(400).json({
           success: false,
           message: 'Missing file key'
         });
       }
+      
+      // Decode the URL-encoded fileKey
+      const fileKey = decodeURIComponent(encodedFileKey);
       
       // Call deleteFile without the second parameter
       await storageService.deleteFile(fileKey);
@@ -216,4 +238,4 @@ class UploadController {
   }
 }
 
-module.exports = new UploadController(); 
+module.exports = new UploadController();

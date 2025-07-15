@@ -15,6 +15,7 @@ import TopFilesChart from '@/components/dashboard/TopFilesChart';
 import FileSearch, { SearchFilters } from '@/components/dashboard/FileSearch';
 import Pagination from '@/components/dashboard/Pagination';
 import BulkActions from '@/components/dashboard/BulkActions';
+import DuplicateDetection from '@/components/dashboard/DuplicateDetection';
 import AdminOverview from '@/components/dashboard/admin/AdminOverview';
 import UserProfileModal from '@/components/dashboard/admin/UserProfileModal';
 import ThumbnailLinks from '@/components/upload/ThumbnailLinks';
@@ -113,6 +114,7 @@ export default function DashboardModal({ isOpen, onClose }: DashboardModalProps)
     fetchActivities,
     deleteFile,
     bulkDeleteFiles,
+    bulkDownloadFiles,
     formatFileSize,
     formatTimeAgo,
   } = useDashboard();
@@ -301,13 +303,23 @@ export default function DashboardModal({ isOpen, onClose }: DashboardModalProps)
   };
 
   const handleBulkDownload = async (fileIds: string[]) => {
-    // Implementation for bulk download
-    showNotification({
-      type: 'info',
-      title: 'Download Started',
-      message: `Preparing ${fileIds.length} files for download`,
-      duration: 3000
-    });
+    try {
+      await bulkDownloadFiles(fileIds);
+      setSelectedFiles([]);
+      showNotification({
+        type: 'success',
+        title: 'Download Started',
+        message: `Downloading ${fileIds.length} files`,
+        duration: 4000
+      });
+    } catch {
+      showNotification({
+        type: 'error',
+        title: 'Download Failed',
+        message: 'Failed to download files',
+        duration: 4000
+      });
+    }
   };
 
   // Handle file selection
@@ -494,6 +506,11 @@ export default function DashboardModal({ isOpen, onClose }: DashboardModalProps)
       icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
     },
     { 
+      id: 'duplicates', 
+      label: 'Duplicates', 
+      icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V15a2 2 0 01-2 2v0a2 2 0 01-2-2v-2a2 2 0 00-2-2H8z" />
+    },
+    { 
       id: 'analytics', 
       label: 'Analytics', 
       icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
@@ -659,145 +676,219 @@ export default function DashboardModal({ isOpen, onClose }: DashboardModalProps)
       case 'uploads':
         return (
           <div className="space-y-6">
-            {/* Upload Stats */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {dashboardStats ? [
-                { label: 'This Month', value: dashboardStats.uploadsThisMonth.toString(), icon: '📅' },
-                { label: 'Total Files', value: dashboardStats.totalUploads.toString(), icon: '📁' },
-                { label: 'Total Views', value: dashboardStats.totalViews.toLocaleString(), icon: '👁️' },
-              ].map((stat, index) => (
-                <div key={index} className="bg-[rgba(20,20,35,0.6)] rounded-xl p-4 border border-gray-800/40">
-                  <div className="flex items-center gap-3">
-                    <span className="text-2xl">{stat.icon}</span>
-                    <div>
-                      <p className="text-xl font-bold text-white">{stat.value}</p>
-                      <p className="text-sm text-gray-400">{stat.label}</p>
-                    </div>
+            {/* Header with Stats */}
+            <div className="bg-gradient-to-br from-blue-500/10 via-purple-500/10 to-indigo-500/10 rounded-2xl p-6 border border-blue-500/20">
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h3 className="text-2xl font-bold text-white mb-2">My Uploads</h3>
+                  <p className="text-gray-300">Manage and organize your uploaded files</p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center shadow-lg">
+                    <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                    </svg>
                   </div>
                 </div>
-              )) : [
-                { label: 'This Month', value: '...', icon: '📅' },
-                { label: 'Total Files', value: '...', icon: '📁' },
-                { label: 'Total Views', value: '...', icon: '👁️' },
-              ].map((stat, index) => (
-                <div key={index} className="bg-[rgba(20,20,35,0.6)] rounded-xl p-4 border border-gray-800/40">
-                  <div className="flex items-center gap-3">
-                    <span className="text-2xl">{stat.icon}</span>
-                    <div>
-                      <p className="text-xl font-bold text-white">{stat.value}</p>
-                      <p className="text-sm text-gray-400">{stat.label}</p>
+              </div>
+              
+              {/* Quick Stats */}
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                {dashboardStats ? [
+                  { label: 'This Month', value: dashboardStats.uploadsThisMonth.toString(), icon: '📅', color: 'from-green-500 to-emerald-500' },
+                  { label: 'Total Files', value: dashboardStats.totalUploads.toString(), icon: '📁', color: 'from-blue-500 to-cyan-500' },
+                  { label: 'Total Views', value: dashboardStats.totalViews.toLocaleString(), icon: '👁️', color: 'from-purple-500 to-pink-500' },
+                  { label: 'Storage Used', value: formatFileSize(dashboardStats.storageUsed), icon: '💾', color: 'from-orange-500 to-red-500' },
+                ].map((stat, index) => (
+                  <div key={index} className="bg-black/20 rounded-xl p-4 border border-gray-700/50 backdrop-blur-sm">
+                    <div className="flex items-center gap-3">
+                      <div className={`w-10 h-10 rounded-lg bg-gradient-to-br ${stat.color} flex items-center justify-center shadow-lg`}>
+                        <span className="text-lg">{stat.icon}</span>
+                      </div>
+                      <div>
+                        <p className="text-lg font-bold text-white">{stat.value}</p>
+                        <p className="text-xs text-gray-400">{stat.label}</p>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                )) : [
+                  { label: 'This Month', value: '...', icon: '📅', color: 'from-green-500 to-emerald-500' },
+                  { label: 'Total Files', value: '...', icon: '📁', color: 'from-blue-500 to-cyan-500' },
+                  { label: 'Total Views', value: '...', icon: '👁️', color: 'from-purple-500 to-pink-500' },
+                  { label: 'Storage Used', value: '...', icon: '💾', color: 'from-orange-500 to-red-500' },
+                ].map((stat, index) => (
+                  <div key={index} className="bg-black/20 rounded-xl p-4 border border-gray-700/50 backdrop-blur-sm">
+                    <div className="flex items-center gap-3">
+                      <div className={`w-10 h-10 rounded-lg bg-gradient-to-br ${stat.color} flex items-center justify-center shadow-lg animate-pulse`}>
+                        <span className="text-lg">{stat.icon}</span>
+                      </div>
+                      <div>
+                        <p className="text-lg font-bold text-white">{stat.value}</p>
+                        <p className="text-xs text-gray-400">{stat.label}</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
 
-            {/* Search and Filters */}
-            <FileSearch
-              onSearch={handleSearch}
-              totalFiles={uploads.length}
-              isLoading={loading}
-            />
+            {/* Enhanced Search and Filters */}
+            <div className="bg-[rgba(20,20,35,0.6)] rounded-xl border border-gray-800/40 p-4">
+              <FileSearch
+                onSearch={handleSearch}
+                totalFiles={uploads.length}
+                isLoading={loading}
+              />
+            </div>
 
-            {/* Bulk Actions */}
-            <BulkActions
-              selectedFiles={selectedFiles}
-              totalFiles={uploads.length}
-              onSelectAll={handleSelectAll}
-              onDeselectAll={handleDeselectAll}
-              onBulkDelete={handleBulkDelete}
-              onBulkDownload={handleBulkDownload}
-              isLoading={loading}
-            />
+            {/* Enhanced Bulk Actions */}
+            <div className="bg-[rgba(20,20,35,0.6)] rounded-xl border border-gray-800/40 p-4">
+              <BulkActions
+                selectedFiles={selectedFiles}
+                totalFiles={uploads.length}
+                uploads={uploads}
+                onSelectAll={handleSelectAll}
+                onDeselectAll={handleDeselectAll}
+                onBulkDelete={handleBulkDelete}
+                onBulkDownload={handleBulkDownload}
+                isLoading={loading}
+              />
+            </div>
 
-            {/* File List */}
+            {/* Redesigned File List */}
             <div className="bg-[rgba(20,20,35,0.6)] rounded-xl border border-gray-800/40 overflow-hidden">
               <div className="p-4 border-b border-gray-800/40">
                 <div className="flex items-center justify-between">
-                  <h4 className="text-lg font-semibold text-white">Recent Uploads</h4>
-                  <button className="text-sm text-blue-400 hover:text-blue-300 transition-colors">
-                    View All
-                  </button>
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
+                      <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                      </svg>
+                    </div>
+                    <h4 className="text-lg font-semibold text-white">File Library</h4>
+                    <span className="px-2 py-1 bg-blue-500/20 text-blue-400 rounded-full text-xs font-medium">
+                      {uploads.length} files
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button className="px-3 py-1.5 text-xs font-medium text-gray-400 hover:text-white transition-colors">
+                      Sort by Date
+                    </button>
+                    <button className="px-3 py-1.5 text-xs font-medium text-blue-400 hover:text-blue-300 transition-colors">
+                      View All
+                    </button>
+                  </div>
                 </div>
               </div>
+              
               <div className="divide-y divide-gray-800/40">
                 {uploads.slice(0, 20).map((file, index) => {
                   const isSelected = selectedFiles.includes(file.id);
+                  const isExpanded = expandedFileId === file.id;
                   return (
-                    <div key={index} className={`p-4 transition-colors ${isSelected ? 'bg-purple-500/10 border-l-4 border-purple-500' : 'hover:bg-[rgba(30,30,45,0.3)]'}`}>
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          {/* Selection Checkbox */}
-                          <button
-                            onClick={() => handleFileSelect(file.id, !isSelected)}
-                            className={`w-5 h-5 rounded border-2 transition-all duration-200 flex items-center justify-center ${
-                              isSelected 
-                                ? 'bg-purple-500 border-purple-500' 
-                                : 'border-gray-600 hover:border-purple-400'
-                            }`}
-                          >
-                            {isSelected && (
-                              <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                              </svg>
-                            )}
-                          </button>
+                    <div key={index} className={`transition-all duration-200 ${
+                      isSelected ? 'bg-purple-500/10 border-l-4 border-purple-500' : 'hover:bg-[rgba(30,30,45,0.3)]'
+                    }`}>
+                      {/* Main File Row */}
+                      <div className="p-4">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-4 flex-1 min-w-0">
+                            {/* Enhanced Selection Checkbox */}
+                            <button
+                              onClick={() => handleFileSelect(file.id, !isSelected)}
+                              className={`w-5 h-5 rounded-lg border-2 transition-all duration-200 flex items-center justify-center ${
+                                isSelected 
+                                  ? 'bg-purple-500 border-purple-500 shadow-lg shadow-purple-500/30' 
+                                  : 'border-gray-600 hover:border-purple-400 hover:shadow-lg hover:shadow-purple-500/20'
+                              }`}
+                            >
+                              {isSelected && (
+                                <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                                </svg>
+                              )}
+                            </button>
 
-                          {/* File thumbnail or icon */}
-                          <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-500/20 to-purple-500/20 border border-blue-500/30 flex items-center justify-center overflow-hidden">
-                            {file.thumbnails?.small ? (
-                              // eslint-disable-next-line @next/next/no-img-element
-                              <img 
-                                src={file.thumbnails.small} 
-                                alt={file.fileName}
-                                className="w-full h-full object-cover rounded-md"
-                                onError={(e) => {
-                                  // Fallback to icon if thumbnail fails to load
-                                  const target = e.target as HTMLImageElement;
-                                  target.style.display = 'none';
-                                  const parent = target.parentElement;
-                                  if (parent) {
-                                    parent.innerHTML = '<span class="text-sm">📷</span>';
-                                  }
-                                }}
-                              />
-                            ) : (
-                              <span className="text-sm">📷</span>
-                            )}
+                            {/* Enhanced File Preview */}
+                            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500/20 to-purple-500/20 border border-blue-500/30 flex items-center justify-center overflow-hidden shadow-lg">
+                              {file.thumbnails?.small ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img 
+                                  src={file.thumbnails.small} 
+                                  alt={file.fileName}
+                                  className="w-full h-full object-cover rounded-lg"
+                                  onError={(e) => {
+                                    const target = e.target as HTMLImageElement;
+                                    target.style.display = 'none';
+                                    const parent = target.parentElement;
+                                    if (parent) {
+                                      parent.innerHTML = '<span class="text-lg">📷</span>';
+                                    }
+                                  }}
+                                />
+                              ) : (
+                                <span className="text-lg">📷</span>
+                              )}
+                            </div>
+                            
+                            {/* Enhanced File Info */}
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-1">
+                                <p className="text-sm font-medium text-white truncate">{file.fileName}</p>
+                                {file.thumbnails && (
+                                  <span className="px-2 py-0.5 bg-purple-500/20 text-purple-400 rounded-full text-xs font-medium">
+                                    Thumbs
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-3 text-xs text-gray-400">
+                                <span className="flex items-center gap-1">
+                                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                                  </svg>
+                                  {formatFileSize(file.fileSize)}
+                                </span>
+                                <span className="flex items-center gap-1">
+                                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                  </svg>
+                                  {formatTimeAgo(file.uploadedAt)}
+                                </span>
+                                <span className="flex items-center gap-1">
+                                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                  </svg>
+                                  {file.viewCount} views
+                                </span>
+                              </div>
+                            </div>
                           </div>
-                          <div>
-                            <p className="text-sm font-medium text-white truncate max-w-[200px]">{file.fileName}</p>
-                            <p className="text-xs text-gray-400">{formatFileSize(file.fileSize)} • {file.fileType} • {formatTimeAgo(file.uploadedAt)}</p>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-4">
-                          <div className="text-right">
-                            <p className="text-sm text-white">{file.viewCount} views</p>
-                          </div>
-                          <div className="flex items-center gap-3">
-                            {/* Thumbnail Button (show only if thumbnails exist) */}
+                          
+                          {/* Enhanced Action Buttons */}
+                          <div className="flex items-center gap-2">
+                            {/* Thumbnail Toggle Button */}
                             {file.thumbnails && (
                               <button 
                                 onClick={() => toggleFileExpansion(file.id)}
                                 className={`group relative px-3 py-2 rounded-xl border transition-all duration-300 transform hover:scale-105 active:scale-95 ${
-                                  expandedFileId === file.id
+                                  isExpanded
                                     ? 'bg-gradient-to-r from-purple-500/30 to-indigo-500/30 border-purple-400/50 text-purple-300 shadow-lg shadow-purple-500/20'
                                     : 'bg-gradient-to-r from-purple-500/10 to-indigo-500/10 border-purple-400/30 text-purple-300 hover:from-purple-500/20 hover:to-indigo-500/20 hover:border-purple-400/50 hover:shadow-lg hover:shadow-purple-500/20'
                                 }`}
-                                title={expandedFileId === file.id ? "Hide thumbnails" : "Show thumbnails"}
+                                title={isExpanded ? "Hide thumbnails" : "Show thumbnails"}
                               >
                                 <div className="flex items-center gap-2">
-                                  <svg className={`w-4 h-4 transition-transform duration-200 ${expandedFileId === file.id ? 'rotate-180' : 'group-hover:scale-110'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <svg className={`w-4 h-4 transition-transform duration-200 ${isExpanded ? 'rotate-180' : 'group-hover:scale-110'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                                   </svg>
                                   <span className="text-xs font-medium">
-                                    {expandedFileId === file.id ? 'Hide' : 'Thumbs'}
+                                    {isExpanded ? 'Hide' : 'Links'}
                                   </span>
                                 </div>
                               </button>
                             )}
 
-                            {/* Enhanced Copy Button */}
+                            {/* Copy Link Button */}
                             <button 
                               onClick={() => handleCopyLink(file.fileKey, file.id)}
                               className={`group relative px-3 py-2 rounded-xl border transition-all duration-300 transform hover:scale-105 active:scale-95 ${
@@ -826,7 +917,7 @@ export default function DashboardModal({ isOpen, onClose }: DashboardModalProps)
                               </div>
                             </button>
 
-                            {/* Enhanced Delete Button */}
+                            {/* Delete Button */}
                             <button 
                               onClick={() => handleDeleteFile(file.id, file.fileName)}
                               className="group relative px-3 py-2 rounded-xl border bg-gradient-to-r from-red-500/10 to-rose-500/10 border-red-400/30 text-red-300 hover:from-red-500/20 hover:to-rose-500/20 hover:border-red-400/50 hover:shadow-lg hover:shadow-red-500/20 transition-all duration-300 transform hover:scale-105 active:scale-95"
@@ -841,42 +932,51 @@ export default function DashboardModal({ isOpen, onClose }: DashboardModalProps)
                             </button>
                           </div>
                         </div>
+                      </div>
 
-                        {/* Thumbnail Links Expansion */}
-                        <AnimatePresence>
-                          {expandedFileId === file.id && file.thumbnails && (
-                            <motion.div
-                              initial={{ opacity: 0, height: 0 }}
-                              animate={{ opacity: 1, height: 'auto' }}
-                              exit={{ opacity: 0, height: 0 }}
-                              className="mt-6 pt-6 border-t border-gray-800/40"
-                            >
+                      {/* Thumbnail Links Expansion - Fixed Layout */}
+                      <AnimatePresence>
+                        {isExpanded && file.thumbnails && (
+                          <motion.div
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: 'auto' }}
+                            exit={{ opacity: 0, height: 0 }}
+                            className="border-t border-gray-800/40 bg-[rgba(15,15,25,0.5)]"
+                          >
+                            <div className="p-6">
                               <ThumbnailLinks 
                                 thumbnails={file.thumbnails}
                                 copied={copiedThumbnail}
                                 copyToClipboard={copyThumbnailToClipboard}
                               />
-                            </motion.div>
-                          )}
-                        </AnimatePresence>
-                      </div>
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
                     </div>
                   );
-                                })}
+                })}
               </div>
             </div>
 
-            {/* Pagination */}
-            <Pagination
-              currentPage={currentPage}
-              totalPages={Math.ceil(uploads.length / itemsPerPage)}
-              totalItems={uploads.length}
-              itemsPerPage={itemsPerPage}
-              onPageChange={handlePageChange}
-              onItemsPerPageChange={handleItemsPerPageChange}
-              isLoading={loading}
-            />
+            {/* Enhanced Pagination */}
+            <div className="bg-[rgba(20,20,35,0.6)] rounded-xl border border-gray-800/40 p-4">
+              <Pagination
+                currentPage={currentPage}
+                totalPages={Math.ceil(uploads.length / itemsPerPage)}
+                totalItems={uploads.length}
+                itemsPerPage={itemsPerPage}
+                onPageChange={handlePageChange}
+                onItemsPerPageChange={handleItemsPerPageChange}
+                isLoading={loading}
+              />
+            </div>
           </div>
+        );
+
+      case 'duplicates':
+        return (
+          <DuplicateDetection onClose={() => setActiveTab('uploads')} />
         );
 
       case 'analytics':
@@ -2103,4 +2203,4 @@ export default function DashboardModal({ isOpen, onClose }: DashboardModalProps)
       )}
     </AnimatePresence>
   );
-} 
+}

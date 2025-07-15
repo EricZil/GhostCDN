@@ -46,7 +46,7 @@ export async function getGuestPresignedUrl(
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      endpoint: 'storage/guest/presigned-url',
+      endpoint: 'upload/presigned/guest',
       method: 'POST',
       body: requestData,
     }),
@@ -98,7 +98,7 @@ export async function getUserPresignedUrl(
       'Authorization': `Bearer ${token}`,
     },
     body: JSON.stringify({
-      endpoint: 'storage/user/presigned-url',
+      endpoint: 'upload/presigned/user',
       method: 'POST',
       body: requestData,
       headers: {
@@ -191,7 +191,6 @@ export async function completeGuestUpload(
   }
 }> {
   const requestData = {
-    fileKey,
     ...options,
   };
   
@@ -202,7 +201,7 @@ export async function completeGuestUpload(
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      endpoint: 'storage/guest/complete',
+      endpoint: `upload/complete/guest/${encodeURIComponent(fileKey)}`,
       method: 'POST',
       body: requestData,
     }),
@@ -242,7 +241,6 @@ export async function completeUserUpload(
   }
 }> {
   const requestData = {
-    fileKey,
     ...options,
   };
   
@@ -254,7 +252,7 @@ export async function completeUserUpload(
       'Authorization': `Bearer ${token}`,
     },
     body: JSON.stringify({
-      endpoint: 'storage/user/complete',
+      endpoint: `upload/complete/user/${encodeURIComponent(fileKey)}`,
       method: 'POST',
       body: requestData,
       headers: {

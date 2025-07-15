@@ -345,7 +345,7 @@ class StorageService {
    * @param {Object} options - Processing options
    * @returns {Promise<Object>} - File details
    */
-  async completeDirectUpload(fileKey, isRegisteredUser = false, options = {}) {
+  async completeDirectUpload(fileKey, isRegisteredUser = false, options = {}, user = null) {
     try {
       const bucketName = process.env.DO_SPACES_BUCKET_NAME;
       
@@ -419,55 +419,72 @@ class StorageService {
         }
       };
 
-      // Update the object's metadata
+      // Set the object to public-read after upload completion
       try {
-        const upload = new Upload({
-          client: doSpacesClient,
-          params: uploadParams,
-        });
+        await this.setObjectPublic(fileKey);
+        console.log(`Successfully set ${fileKey} to public-read`);
       } catch (error) {
-        console.error('Error updating object metadata:', error);
-        // Continue even if metadata update fails
+        console.error('Error setting object to public-read:', error);
+        // Continue even if ACL update fails
       }
       
       // Record the file upload in database if possible
       try {
-        // Extract user ID if this is a registered user upload
-        let userId = null;
         if (isRegisteredUser) {
-          // Extract user folder from path: Registered/{userFolder}/filename
-          const pathParts = fileKey.split('/');
-          if (pathParts.length >= 3 && pathParts[0] === 'Registered') {
-            // Try to find user by folder name
-            const userFolder = pathParts[1];
-            const user = await prisma.user.findFirst({
-              where: { r2FolderName: userFolder }
-            });
-            userId = user?.id || null;
-          }
-        }
-        
-        const fileRecord = await prisma.image.create({
-          data: {
-            fileKey: fileKey,
-            cdnUrl: fileUrl,
-            originalName: originalFilename,
-            fileSize: fileSize,
-            fileType: contentType,
-            uploadedAt: new Date(),
-            width: width || null,
-            height: height || null,
-            user: {
-              // Connect to an existing user if userId is available
-              ...(userId ? { connect: { id: userId } } : {
-                // For guest uploads, create a system user if needed
-                connect: { id: process.env.SYSTEM_USER_ID || "guest_user_id" }
-              })
+          // For registered users, use the Image table
+          let userId = null;
+          if (user && user.id) {
+            userId = user.id;
+          } else {
+            // Extract user folder from path: Registered/{userFolder}/filename
+            const pathParts = fileKey.split('/');
+            if (pathParts.length >= 3 && pathParts[0] === 'Registered') {
+              // Try to find user by folder name
+              const userFolder = pathParts[1];
+              const foundUser = await prisma.user.findFirst({
+                where: { r2FolderName: userFolder }
+              });
+              userId = foundUser?.id || null;
             }
-          },
-        });
-        
-        console.log(`File recorded in database: ${fileRecord.id}`);
+          }
+          
+          if (userId) {
+            const fileRecord = await prisma.image.create({
+              data: {
+                fileName: originalFilename,
+                fileKey: fileKey,
+                fileSize: fileSize,
+                fileType: contentType,
+                uploadedAt: new Date(),
+                width: width || null,
+                height: height || null,
+                user: {
+                  connect: { id: userId }
+                }
+              },
+            });
+            console.log(`Registered user file recorded in database: ${fileRecord.id}`);
+          } else {
+            console.warn('Could not find user for registered upload, skipping database record');
+          }
+        } else {
+          // For guest uploads, use the GuestUpload table
+          const guestRecord = await prisma.guestUpload.create({
+            data: {
+              fileName: originalFilename,
+              fileKey: fileKey,
+              fileSize: fileSize,
+              fileType: contentType,
+              mimeType: contentType,
+              width: width || null,
+              height: height || null,
+              uploadedAt: new Date(),
+              expiresAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000), // 14 days from now
+              isDeleted: false
+            },
+          });
+          console.log(`Guest file recorded in database: ${guestRecord.id}`);
+        }
       } catch (dbError) {
         console.error('Error recording file in database:', dbError);
         // Continue even if database recording fails
@@ -490,6 +507,28 @@ class StorageService {
     }
   }
   
+  /**
+   * Get a file stream from storage
+   * @param {string} fileKey - The key of the file to stream
+   * @returns {Promise<any>} - File stream
+   */
+  async getFileStream(fileKey) {
+    try {
+      const bucketName = process.env.DO_SPACES_BUCKET_NAME;
+      
+      const command = new GetObjectCommand({
+        Bucket: bucketName,
+        Key: fileKey,
+      });
+      
+      const response = await doSpacesClient.send(command);
+      return response.Body;
+    } catch (error) {
+      console.error(`Error getting file stream for ${fileKey}:`, error);
+      throw error;
+    }
+  }
+
   /**
    * Delete a file from storage
    * @param {string} fileKey - The key of the file to delete

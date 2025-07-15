@@ -66,7 +66,7 @@ export async function POST(request: NextRequest) {
       }, {} as Record<string, string>);
       
       body = JSON.stringify(processedOptions);
-      endpoint = `${API_URL}/upload/complete/${uploadType}/${fileKey}`;
+      endpoint = `${API_URL}/upload/complete/${uploadType}/${encodeURIComponent(fileKey)}`;
       
   
     }
@@ -89,4 +89,4 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
-} 
+}

@@ -123,6 +123,29 @@ export async function POST(request: NextRequest) {
       body: JSON.stringify(body),
     });
 
+    // Handle bulk download responses which can be either JSON or binary
+    if (endpoint === 'files/bulk-download') {
+      const contentType = response.headers.get('content-type');
+      
+      if (contentType && contentType.includes('application/zip')) {
+        // Binary ZIP file response - stream it directly
+        const arrayBuffer = await response.arrayBuffer();
+        
+        return new NextResponse(arrayBuffer, {
+          status: response.status,
+          headers: {
+            'Content-Type': 'application/zip',
+            'Content-Disposition': response.headers.get('content-disposition') || 'attachment; filename="files.zip"',
+          },
+        });
+      } else {
+        // JSON response (single file or error)
+        const data = await response.json();
+        return NextResponse.json(data, { status: response.status });
+      }
+    }
+
+    // For all other endpoints, parse as JSON
     const data = await response.json();
     
     return NextResponse.json(data, { status: response.status });
@@ -200,4 +223,4 @@ export async function DELETE(request: NextRequest) {
       { status: 500 }
     );
   }
-} 
+}

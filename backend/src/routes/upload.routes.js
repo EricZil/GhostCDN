@@ -2,6 +2,7 @@ const express = require('express');
 const path = require('path');
 const uploadController = require('../controllers/upload.controller');
 const { checkAllBans } = require('../middleware/ban.middleware');
+const { optionalNextAuthJWT } = require('../middleware/jwt.middleware');
 
 const router = express.Router();
 
@@ -23,13 +24,13 @@ const extractToken = (req, res, next) => {
 router.post('/presigned/guest', uploadController.getGuestPresignedUrl);
 
 // Get presigned URL for registered user uploads
-router.post('/presigned/user', extractToken, uploadController.getUserPresignedUrl);
+router.post('/presigned/user', extractToken, optionalNextAuthJWT, uploadController.getUserPresignedUrl);
 
 // Complete upload after direct upload is finished
 router.post('/complete/guest/:fileKey', uploadController.completeGuestUpload);
-router.post('/complete/user/:fileKey', extractToken, uploadController.completeUserUpload);
+router.post('/complete/user/:fileKey', extractToken, optionalNextAuthJWT, uploadController.completeUserUpload);
 
 // Delete file route
 router.delete('/:fileKey', uploadController.deleteFile);
 
-module.exports = router; 
+module.exports = router;

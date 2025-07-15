@@ -97,13 +97,13 @@ export default function Home() {
   const getMessageTypeStyles = (type: SystemMessage['type']) => {
     switch (type) {
       case 'CRITICAL':
-        return 'bg-red-500/10 border-red-500/30 text-red-400';
+        return 'bg-red-500/20 border-red-400/40 text-red-300 shadow-red-500/20';
       case 'WARNING':
-        return 'bg-yellow-500/10 border-yellow-500/30 text-yellow-400';
+        return 'bg-amber-500/20 border-amber-400/40 text-amber-300 shadow-amber-500/20';
       case 'INFO':
-        return 'bg-blue-500/10 border-blue-500/30 text-blue-400';
+        return 'bg-cyan-500/20 border-cyan-400/40 text-cyan-300 shadow-cyan-500/20';
       default:
-        return 'bg-gray-500/10 border-gray-500/30 text-gray-400';
+        return 'bg-gray-500/20 border-gray-400/40 text-gray-300 shadow-gray-500/20';
     }
   };
 
@@ -132,24 +132,24 @@ export default function Home() {
       {/* Darker gradient overlay */}
       <div className="dark-gradient-bg"></div>
       
-      {/* System Messages */}
+      {/* System Messages - Repositioned */}
       {systemMessages.length > 0 && (
-        <div className="fixed top-20 left-1/2 transform -translate-x-1/2 z-30 w-full max-w-4xl px-4">
-          <div className="space-y-3">
+        <div className="fixed top-6 right-6 z-30 w-full max-w-sm">
+          <div className="space-y-2">
             {systemMessages.map((message) => (
               <div
                 key={message.id}
-                className={`p-4 rounded-lg border backdrop-blur-sm ${getMessageTypeStyles(message.type)} transition-all duration-300`}
+                className={`p-3 rounded-xl border backdrop-blur-md ${getMessageTypeStyles(message.type)} transition-all duration-500 hover:scale-105 shadow-lg`}
               >
-                <div className="flex items-start gap-3">
-                  <span className="text-lg flex-shrink-0 mt-0.5">
+                <div className="flex items-start gap-2">
+                  <span className="text-sm flex-shrink-0 mt-0.5">
                     {getMessageIcon(message.type)}
                   </span>
                   <div className="flex-1 min-w-0">
-                    <h3 className="font-semibold text-sm mb-1">
+                    <h3 className="font-semibold text-xs mb-1 tracking-wide">
                       {message.title}
                     </h3>
-                    <p className="text-sm opacity-90 leading-relaxed">
+                    <p className="text-xs opacity-90 leading-relaxed">
                       {message.content}
                     </p>
                   </div>
@@ -162,24 +162,52 @@ export default function Home() {
       
       {/* Main content - centered logo */}
       <div className="container mx-auto px-4 flex flex-col items-center justify-center min-h-screen py-16 relative z-10">
-        <h1 className={`text-center transition-all duration-700 ${isLoaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'} mb-8 flex items-center justify-center`}>
-          <span className="text-7xl md:text-8xl lg:text-9xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 via-purple-500 to-blue-600 tracking-tight font-geist-mono whitespace-nowrap">
-            GHOST&nbsp;
-          </span>
-          <PointerHighlight 
-            rectangleClassName="border-blue-500/50 dark:border-blue-500/50"
-            pointerClassName="text-blue-500"
-            containerClassName="inline-block"
-          >
-            <span className="text-7xl md:text-8xl lg:text-9xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 via-purple-500 to-blue-600 tracking-tight font-geist-mono whitespace-nowrap">
-              CDN
+        {/* Enterprise Header */}
+        <div className={`text-center transition-all duration-1000 ${isLoaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-12'} mb-12`}>
+          {/* Trust Indicators */}
+          <div className="flex items-center justify-center gap-6 mb-6 text-sm text-blue-300/70 font-medium tracking-wider">
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+              <span>99.9% UPTIME</span>
+            </div>
+            <div className="w-px h-4 bg-blue-500/30"></div>
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 bg-blue-400 rounded-full"></div>
+              <span>&lt;50MS LATENCY</span>
+            </div>
+            <div className="w-px h-4 bg-blue-500/30"></div>
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 bg-purple-400 rounded-full"></div>
+              <span>150+ EDGE LOCATIONS</span>
+            </div>
+          </div>
+          
+          {/* Main Logo */}
+          <h1 className="flex items-center justify-center mb-4">
+            <span className="text-7xl md:text-8xl lg:text-9xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-cyan-400 via-blue-500 to-purple-600 tracking-tight font-geist-mono whitespace-nowrap hover:scale-105 transition-transform duration-500">
+              GHOST&nbsp;
             </span>
-          </PointerHighlight>
-        </h1>
+            <PointerHighlight 
+              rectangleClassName="border-cyan-400/60 dark:border-cyan-400/60"
+              pointerClassName="text-cyan-400"
+              containerClassName="inline-block"
+            >
+              <span className="text-7xl md:text-8xl lg:text-9xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-cyan-400 via-blue-500 to-purple-600 tracking-tight font-geist-mono whitespace-nowrap">
+                CDN
+              </span>
+            </PointerHighlight>
+          </h1>
+          
+          {/* Enterprise Subtitle */}
+          <div className="text-lg md:text-xl text-cyan-300/80 font-medium tracking-[0.2em] mb-6 font-geist-mono">
+            ENTERPRISE CONTENT DELIVERY NETWORK
+          </div>
+        </div>
         
-        <div className={`transition-all duration-700 delay-300 ${isLoaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}>
-          <p className="ghost-tagline text-center max-w-3xl text-2xl md:text-3xl lg:text-4xl font-medium text-white/90 mb-8 font-geist-mono">
-            One upload. Global delivery.
+        {/* Enhanced Tagline */}
+        <div className={`transition-all duration-1000 delay-300 ${isLoaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'} mb-16`}>
+          <p className="ghost-tagline text-center max-w-4xl text-3xl md:text-4xl lg:text-5xl font-medium text-white/95 font-geist-mono leading-relaxed">
+            One upload. <span className="text-cyan-400">Global delivery.</span>
           </p>
         </div>
       </div>

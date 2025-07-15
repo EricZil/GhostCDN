@@ -866,4 +866,277 @@ router.post('/activity', async (req, res) => {
   }
 });
 
-module.exports = router; 
+// Bulk download files
+router.post('/files/bulk-download', async (req, res) => {
+  try {
+    const { fileIds, userId: userEmail } = req.body;
+    
+    // Find user by email first
+    const user = await prisma.user.findUnique({
+      where: { email: userEmail }
+    });
+    
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+    
+    const userId = user.id;
+    
+    if (!Array.isArray(fileIds) || fileIds.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'fileIds must be a non-empty array'
+      });
+    }
+    
+    // Verify all files belong to user and get file details
+    const files = await prisma.image.findMany({
+      where: { 
+        id: { in: fileIds },
+        userId 
+      },
+      select: {
+        id: true,
+        fileName: true,
+        fileKey: true,
+        fileSize: true,
+        fileType: true
+      }
+    });
+    
+    if (files.length !== fileIds.length) {
+      return res.status(404).json({
+        success: false,
+        message: 'Some files not found or access denied'
+      });
+    }
+    
+    const baseUrl = process.env.DO_SPACES_PUBLIC_URL || 'https://cdn.gcdn.space';
+    
+    // For single file, return direct download URL with proper headers
+    if (files.length === 1) {
+      const file = files[0];
+      const downloadUrl = `${baseUrl}/${file.fileKey}`;
+      
+      // Log single file download activity
+      await prisma.activity.create({
+        data: {
+          userId,
+          type: 'DOWNLOAD',
+          message: `Downloaded file: ${file.fileName}`,
+          metadata: JSON.stringify({
+            fileName: file.fileName,
+            fileKey: file.fileKey,
+            fileSize: file.fileSize
+          })
+        }
+      });
+      
+      return res.json({
+        success: true,
+        type: 'single',
+        file: {
+          id: file.id,
+          fileName: file.fileName,
+          fileSize: file.fileSize,
+          fileType: file.fileType,
+          downloadUrl
+        }
+      });
+    }
+    
+    // For multiple files, create a zip archive
+    const archiver = require('archiver');
+    const archive = archiver('zip', {
+      zlib: { level: 9 } // Maximum compression
+    });
+    
+    // Set response headers for zip download
+    const zipFileName = `files_${Date.now()}.zip`;
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="${zipFileName}"`);
+    
+    // Pipe archive to response
+    archive.pipe(res);
+    
+    // Handle archive errors
+    archive.on('error', (err) => {
+      console.error('Archive error:', err);
+      if (!res.headersSent) {
+        res.status(500).json({
+          success: false,
+          message: 'Failed to create zip archive',
+          error: err.message
+        });
+      }
+    });
+    
+    // Add files to archive
+    for (const file of files) {
+      try {
+        // Get file stream from storage
+        const fileStream = await storageService.getFileStream(file.fileKey);
+        archive.append(fileStream, { name: file.fileName });
+      } catch (error) {
+        console.error(`Error adding file to archive: ${file.fileName}`, error);
+        // Continue with other files even if one fails
+      }
+    }
+    
+    // Finalize the archive
+    await archive.finalize();
+    
+    // Log bulk download activity
+    await prisma.activity.create({
+      data: {
+        userId,
+        type: 'DOWNLOAD',
+        message: `Bulk downloaded ${files.length} files as zip`,
+        metadata: JSON.stringify({
+          downloadedFiles: files.map(f => ({ fileName: f.fileName, fileKey: f.fileKey })),
+          count: files.length,
+          zipFileName
+        })
+      }
+    });
+    
+  } catch (error) {
+    console.error('Error generating bulk download:', error);
+    if (!res.headersSent) {
+      res.status(500).json({
+        success: false,
+        message: 'Failed to generate bulk download',
+        error: error.message
+      });
+    }
+  }
+});
+
+// Detect duplicate files
+router.get('/duplicates/:userEmail', async (req, res) => {
+  try {
+    const { userEmail } = req.params;
+    
+    // Find user by email first
+    const user = await prisma.user.findUnique({
+      where: { email: userEmail }
+    });
+    
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+    
+    const userId = user.id;
+    
+    // Find duplicates by file size and name
+    const duplicatesBySize = await prisma.image.groupBy({
+      by: ['fileSize', 'fileName'],
+      where: { userId },
+      _count: {
+        id: true
+      },
+      having: {
+        id: {
+          _count: {
+            gt: 1
+          }
+        }
+      }
+    });
+    
+    // Get detailed information for duplicate files
+    const duplicateGroups = await Promise.all(
+      duplicatesBySize.map(async (group) => {
+        const files = await prisma.image.findMany({
+          where: {
+            userId,
+            fileSize: group.fileSize,
+            fileName: group.fileName
+          },
+          orderBy: { uploadedAt: 'asc' },
+          include: {
+            _count: {
+              select: {
+                analytics: {
+                  where: { event: 'VIEW' }
+                }
+              }
+            }
+          }
+        });
+        
+        // Add thumbnail URLs and view counts
+        const filesWithDetails = files.map(file => {
+          const baseUrl = process.env.DO_SPACES_PUBLIC_URL || 'https://cdn.gcdn.space';
+          let thumbnails = null;
+          
+          let thumbnailBasePath;
+          if (file.fileKey.startsWith('Guests/')) {
+            thumbnailBasePath = 'Guests/Thumbnails/';
+          } else if (file.fileKey.startsWith('Registered/')) {
+            const pathParts = file.fileKey.split('/');
+            const userFolder = pathParts[1];
+            thumbnailBasePath = `Registered/${userFolder}/Thumbnails/`;
+          }
+          
+          if (thumbnailBasePath) {
+            const originalFileName = file.fileKey.split('/').pop();
+            if (originalFileName) {
+              const baseName = originalFileName.substring(0, originalFileName.lastIndexOf('.'));
+              thumbnails = {
+                small: `${baseUrl}/${thumbnailBasePath}${baseName}_small.webp`,
+                medium: `${baseUrl}/${thumbnailBasePath}${baseName}_medium.webp`,
+                large: `${baseUrl}/${thumbnailBasePath}${baseName}_large.webp`
+              };
+            }
+          }
+          
+          return {
+            ...file,
+            viewCount: file._count.analytics,
+            thumbnails
+          };
+        });
+        
+        return {
+          fileName: group.fileName,
+          fileSize: group.fileSize,
+          count: group._count.id,
+          files: filesWithDetails,
+          potentialSavings: group.fileSize * (group._count.id - 1) // Size that could be saved by keeping only one
+        };
+      })
+    );
+    
+    // Calculate total potential savings
+    const totalPotentialSavings = duplicateGroups.reduce(
+      (sum, group) => sum + group.potentialSavings, 
+      0
+    );
+    
+    res.json({
+      success: true,
+      data: {
+        duplicateGroups,
+        totalGroups: duplicateGroups.length,
+        totalDuplicateFiles: duplicateGroups.reduce((sum, group) => sum + group.count, 0),
+        totalPotentialSavings
+      }
+    });
+  } catch (error) {
+    console.error('Error detecting duplicates:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to detect duplicates',
+      error: error.message
+    });
+  }
+});
+
+module.exports = router;

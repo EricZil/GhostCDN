@@ -1,15 +1,22 @@
 @import "tailwindcss";
 
 :root {
+  /* Enterprise Color Palette - Darker Theme */
   --background: #000000;
   --foreground: #ffffff;
-  --accent: #7c3aed;
-  --accent-light: #a78bfa;
-  --accent-dark: #5b21b6;
-  --glass: rgba(255, 255, 255, 0.1);
-  --glass-border: rgba(255, 255, 255, 0.15);
-  --glass-highlight: rgba(255, 255, 255, 0.2);
-  --glass-shadow: rgba(0, 0, 0, 0.5);
+  --primary: #050208;
+  --accent: #00D4FF;
+  --accent-light: #22D3EE;
+  --accent-dark: #0891B2;
+  --secondary: #6366F1;
+  --highlight: #F0F9FF;
+  --glass: rgba(0, 212, 255, 0.1);
+  --glass-border: rgba(0, 212, 255, 0.15);
+  --glass-highlight: rgba(0, 212, 255, 0.2);
+  --glass-shadow: rgba(0, 0, 0, 0.7);
+  --enterprise-cyan: #22D3EE;
+  --enterprise-blue: #3B82F6;
+  --enterprise-purple: #8B5CF6;
   --gray-50: #f9fafb;
   --gray-100: #f3f4f6;
   --gray-200: #e5e7eb;
@@ -23,8 +30,8 @@
   --card-width: 100%;
   --card-height: auto;
   --card-border-radius: 24px;
-  --grid-size: 40px;
-  --grid-color: rgba(255, 255, 255, 0.05);
+  --grid-size: 35px;
+  --grid-color: rgba(34, 211, 238, 0.08);
 }
 
 @theme inline {
@@ -55,6 +62,7 @@ body {
   color: var(--foreground);
   font-family: var(--font-sans);
   min-height: 100vh;
+  overflow-x: hidden;
 }
 
 /* Custom Scrollbar Styles for GhostCDN */
@@ -114,7 +122,7 @@ html {
   scrollbar-color: #6366f1 #f9fafb;
 }
 
-/* Grid Background */
+/* Enhanced Grid Background */
 .grid-background {
   position: fixed;
   top: -10%;
@@ -122,14 +130,16 @@ html {
   right: -10%;
   bottom: -10%;
   z-index: -2;
-  background-color: #000000;
+  background: #000000;
   background-image: 
     linear-gradient(var(--grid-color) 1px, transparent 1px),
-    linear-gradient(90deg, var(--grid-color) 1px, transparent 1px);
-  background-size: var(--grid-size) var(--grid-size);
+    linear-gradient(90deg, var(--grid-color) 1px, transparent 1px),
+    radial-gradient(circle at 25% 25%, rgba(34, 211, 238, 0.03) 0%, transparent 50%),
+    radial-gradient(circle at 75% 75%, rgba(139, 92, 246, 0.03) 0%, transparent 50%);
+  background-size: var(--grid-size) var(--grid-size), var(--grid-size) var(--grid-size), 800px 800px, 600px 600px;
   transform-style: preserve-3d;
-  transform: perspective(1000px) rotateX(2deg);
-  animation: gridFloat 20s infinite alternate ease-in-out;
+  transform: perspective(1200px) rotateX(1.5deg);
+  animation: gridFloat 25s infinite alternate ease-in-out;
 }
 
 /* Create grid lines that extend to "infinity" */
@@ -150,13 +160,37 @@ html {
 
 @keyframes gridFloat {
   0% {
-    transform: perspective(1000px) rotateX(2deg) rotateY(0deg) translateY(0);
+    transform: perspective(1200px) rotateX(1.5deg) rotateY(0deg) translateY(0) translateZ(0);
   }
-  50% {
-    transform: perspective(1000px) rotateX(2.5deg) rotateY(0.5deg) translateY(-5px);
+  33% {
+    transform: perspective(1200px) rotateX(2deg) rotateY(0.3deg) translateY(-3px) translateZ(5px);
+  }
+  66% {
+    transform: perspective(1200px) rotateX(1deg) rotateY(-0.3deg) translateY(3px) translateZ(-5px);
   }
   100% {
-    transform: perspective(1000px) rotateX(1.5deg) rotateY(-0.5deg) translateY(5px);
+    transform: perspective(1200px) rotateX(1.5deg) rotateY(0deg) translateY(0) translateZ(0);
+  }
+}
+
+@keyframes gradientShift {
+  0% {
+    transform: translateX(0) translateY(0) scale(1);
+  }
+  50% {
+    transform: translateX(20px) translateY(-10px) scale(1.05);
+  }
+  100% {
+    transform: translateX(-10px) translateY(15px) scale(0.98);
+  }
+}
+
+@keyframes enterprisePulse {
+  0%, 100% {
+    box-shadow: 0 0 20px rgba(34, 211, 238, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 30px rgba(34, 211, 238, 0.5), 0 0 40px rgba(139, 92, 246, 0.3);
   }
 }
 
@@ -198,7 +232,7 @@ html {
   transform: scale(1);
 }
 
-/* Darker gradient background */
+/* Enhanced gradient background */
 .dark-gradient-bg {
   position: fixed;
   top: 0;
@@ -207,7 +241,10 @@ html {
   bottom: 0;
   z-index: -1;
   overflow: hidden;
-  background: radial-gradient(circle at 50% 50%, rgba(20, 10, 30, 0.7) 0%, rgba(5, 2, 8, 0.9) 100%);
+  background: 
+    radial-gradient(circle at 30% 20%, rgba(34, 211, 238, 0.08) 0%, transparent 50%),
+    radial-gradient(circle at 70% 80%, rgba(139, 92, 246, 0.06) 0%, transparent 50%),
+    radial-gradient(circle at 50% 50%, rgba(20, 10, 30, 0.7) 0%, rgba(5, 2, 8, 0.9) 100%);
 }
 
 .dark-gradient-bg::before {
@@ -218,8 +255,10 @@ html {
   right: 0;
   bottom: 0;
   background: 
-    radial-gradient(circle at 20% 35%, rgba(124, 58, 237, 0.08) 0%, transparent 45%),
-    radial-gradient(circle at 75% 65%, rgba(124, 58, 237, 0.05) 0%, transparent 40%);
+    radial-gradient(circle at 15% 30%, rgba(34, 211, 238, 0.05) 0%, transparent 40%),
+    radial-gradient(circle at 85% 70%, rgba(99, 102, 241, 0.04) 0%, transparent 45%),
+    radial-gradient(circle at 50% 10%, rgba(139, 92, 246, 0.03) 0%, transparent 35%);
+  animation: gradientShift 30s infinite alternate ease-in-out;
 }
 
 .dark-gradient-bg::after {
@@ -319,16 +358,17 @@ html {
   }
 }
 
-/* Liquid glass effects for navbar */
+/* Enhanced glass effects for navbar */
 .glass-nav {
-  background: rgba(15, 15, 20, 0.5);
-  backdrop-filter: blur(15px);
-  -webkit-backdrop-filter: blur(15px);
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: rgba(15, 15, 20, 0.6);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(34, 211, 238, 0.15);
   box-shadow: 
-    0 4px 20px rgba(0, 0, 0, 0.7),
-    0 0 15px rgba(124, 58, 237, 0.1),
-    inset 0 0 5px rgba(255, 255, 255, 0.05);
+    0 8px 32px rgba(0, 0, 0, 0.8),
+    0 0 20px rgba(34, 211, 238, 0.15),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    inset 0 -1px 0 rgba(34, 211, 238, 0.1);
 }
 
 .glass-highlight {
@@ -394,6 +434,59 @@ html {
 .nav-item:hover .nav-label {
   opacity: 1;
   transform: translateX(-50%) translateY(0);
+}
+
+/* Enterprise Upload Button Styling */
+.upload-button {
+  background: linear-gradient(135deg, 
+    rgba(34, 211, 238, 0.8) 0%, 
+    rgba(59, 130, 246, 0.9) 50%, 
+    rgba(139, 92, 246, 0.8) 100%);
+  border: 2px solid rgba(34, 211, 238, 0.4);
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+.upload-button::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, 
+    transparent, 
+    rgba(255, 255, 255, 0.3), 
+    transparent);
+  transition: left 0.6s ease;
+}
+
+.upload-button:hover::before {
+  left: 100%;
+}
+
+.upload-button:hover {
+  transform: translateY(-3px) scale(1.05);
+  box-shadow: 
+    0 0 30px rgba(34, 211, 238, 0.6),
+    0 0 50px rgba(59, 130, 246, 0.4),
+    0 10px 30px rgba(0, 0, 0, 0.3);
+  border-color: rgba(34, 211, 238, 0.8);
+}
+
+.upload-button:active {
+  transform: translateY(-1px) scale(1.02);
+}
+
+/* Upload Label Enhancement */
+.upload-label {
+  background: linear-gradient(135deg, 
+    rgba(34, 211, 238, 0.9) 0%, 
+    rgba(59, 130, 246, 0.9) 100%) !important;
+  border-color: rgba(34, 211, 238, 0.6) !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.05em !important;
 }
 
 @keyframes rotate {

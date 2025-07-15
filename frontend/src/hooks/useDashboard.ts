@@ -299,6 +299,118 @@ export function useDashboard() {
     }
   }, [callDashboardAPI, fetchUploads, fetchOverview, fetchStorage, logActivity]);
 
+  // Bulk download files
+  const bulkDownloadFiles = useCallback(async (fileIds: string[]) => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      if (!user) {
+        throw new Error('User not authenticated');
+      }
+
+      const params = new URLSearchParams({
+        endpoint: 'files/bulk-download'
+      });
+
+      const response = await fetch(`/api/dashboard?${params.toString()}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ fileIds })
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to download files');
+      }
+
+      // Check if response is JSON (single file) or binary (zip file)
+      const contentType = response.headers.get('content-type');
+      
+      if (contentType && contentType.includes('application/json')) {
+        // Single file download - JSON response
+        const result = await response.json();
+        
+        if (result.success) {
+          const file = result.file;
+          
+          try {
+            // Fetch the file as blob to force download
+            const fileResponse = await fetch(file.downloadUrl);
+            const blob = await fileResponse.blob();
+            const url = window.URL.createObjectURL(blob);
+            
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = file.fileName;
+            link.style.display = 'none';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            // Clean up the object URL
+            window.URL.revokeObjectURL(url);
+          } catch {
+            // Fallback: open in new tab if blob download fails
+            window.open(file.downloadUrl, '_blank');
+          }
+        }
+      } else {
+        // Multiple files download - ZIP file response
+        await logActivity('DOWNLOAD', `Bulk download initiated for ${fileIds.length} files`);
+        
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        
+        // Extract filename from Content-Disposition header or use default
+        const contentDisposition = response.headers.get('content-disposition');
+        let fileName = `files_${Date.now()}.zip`;
+        if (contentDisposition) {
+          const fileNameMatch = contentDisposition.match(/filename="(.+)"/i);
+          if (fileNameMatch) {
+            fileName = fileNameMatch[1];
+          }
+        }
+        
+        link.download = fileName;
+        link.style.display = 'none';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(url);
+      }
+      
+      return { success: true };
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to download files');
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, [user, logActivity]);
+
+  // Fetch duplicate files
+  const fetchDuplicates = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const response = await callDashboardAPI('duplicates');
+      if (response.success) {
+        return response.data;
+      }
+      return null;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to fetch duplicates');
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, [callDashboardAPI]);
+
   // Track analytics event
   const trackEvent = useCallback(async (imageId: string, event: string, metadata?: Record<string, unknown>) => {
     try {
@@ -360,6 +472,8 @@ export function useDashboard() {
     fetchActivities,
     deleteFile,
     bulkDeleteFiles,
+    bulkDownloadFiles,
+    fetchDuplicates,
     trackEvent,
     logActivity,
     
@@ -367,4 +481,4 @@ export function useDashboard() {
     formatFileSize,
     formatTimeAgo,
   };
-} 
+}
