@@ -4,8 +4,10 @@ on:
   push:
     branches: [ main, develop ]
     tags: [ 'v*' ]
+    paths: [ 'CLI/**' ]
   pull_request:
     branches: [ main ]
+    paths: [ 'CLI/**' ]
   workflow_dispatch:
     inputs:
       version_bump:
@@ -20,7 +22,7 @@ on:
 
 env:
   NODE_VERSION: '18'
-  REGISTRY_URL: 'https://registry.npmjs.org'
+  CLI_DIR: './CLI'
 
 jobs:
   # Security audit and code quality checks
@@ -36,14 +38,18 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
+          cache-dependency-path: '${{ env.CLI_DIR }}/package-lock.json'
 
-      - name: Install dependencies
+      - name: Install CLI dependencies
+        working-directory: ${{ env.CLI_DIR }}
         run: npm ci
 
       - name: Run security audit
+        working-directory: ${{ env.CLI_DIR }}
         run: npm audit --audit-level=moderate
 
       - name: Check for vulnerabilities
+        working-directory: ${{ env.CLI_DIR }}
         run: |
           if npm audit --audit-level=high --json | jq '.vulnerabilities | length' | grep -v '^0$'; then
             echo "High severity vulnerabilities found!"
@@ -52,8 +58,8 @@ jobs:
           fi
 
       - name: Lint code
+        working-directory: ${{ env.CLI_DIR }}
         run: |
-          # Basic linting checks
           echo "Running code quality checks..."
           
           # Check for hardcoded secrets or sensitive data
@@ -91,6 +97,7 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
+          cache-dependency-path: '${{ env.CLI_DIR }}/package-lock.json'
 
       - name: Configure Git
         run: |
@@ -115,16 +122,17 @@ jobs:
 
       - name: Bump version
         id: version
+        working-directory: ${{ env.CLI_DIR }}
         run: |
           BUMP_TYPE="${{ steps.version-bump.outputs.bump }}"
           NEW_VERSION=$(npm version $BUMP_TYPE --no-git-tag-version)
           echo "version=${NEW_VERSION#v}" >> $GITHUB_OUTPUT
-          echo "tag=${NEW_VERSION}" >> $GITHUB_OUTPUT
+          echo "tag=cli-${NEW_VERSION}" >> $GITHUB_OUTPUT
           
           # Update package.json
           git add package.json
-          git commit -m "chore: bump version to ${NEW_VERSION}"
-          git tag ${NEW_VERSION}
+          git commit -m "chore(cli): bump version to ${NEW_VERSION}"
+          git tag cli-${NEW_VERSION}
 
       - name: Push changes
         run: |
@@ -185,13 +193,16 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
+          cache-dependency-path: '${{ env.CLI_DIR }}/package-lock.json'
 
       - name: Install dependencies
+        working-directory: ${{ env.CLI_DIR }}
         run: npm ci --production
 
       - name: Get version info
         id: version-info
         shell: bash
+        working-directory: ${{ env.CLI_DIR }}
         run: |
           VERSION=$(node -p "require('./package.json').version")
           GIT_HASH=$(git rev-parse --short HEAD)
@@ -203,6 +214,7 @@ jobs:
 
       - name: Create build info
         shell: bash
+        working-directory: ${{ env.CLI_DIR }}
         run: |
           cat > src/build-info.js << EOF
           module.exports = {
@@ -216,6 +228,7 @@ jobs:
 
       - name: Build executable
         shell: bash
+        working-directory: ${{ env.CLI_DIR }}
         run: |
           # Create output directory
           mkdir -p dist
@@ -232,6 +245,7 @@ jobs:
 
       - name: Test executable
         shell: bash
+        working-directory: ${{ env.CLI_DIR }}
         run: |
           # Basic smoke test
           if [[ "${{ matrix.platform }}" == "win" ]]; then
@@ -243,6 +257,7 @@ jobs:
 
       - name: Generate checksums
         shell: bash
+        working-directory: ${{ env.CLI_DIR }}
         run: |
           cd dist
           if command -v sha256sum >/dev/null 2>&1; then
@@ -259,8 +274,8 @@ jobs:
         with:
           name: executable-${{ matrix.platform }}-${{ matrix.arch }}
           path: |
-            dist/${{ env.EXECUTABLE_NAME }}
-            dist/${{ env.EXECUTABLE_NAME }}.sha256
+            ${{ env.CLI_DIR }}/dist/${{ env.EXECUTABLE_NAME }}
+            ${{ env.CLI_DIR }}/dist/${{ env.EXECUTABLE_NAME }}.sha256
           retention-days: 30
 
   # Create GitHub release
@@ -355,7 +370,7 @@ jobs:
     needs: create-release
     if: always() && needs.create-release.result == 'success'
     steps:
-      - name: Cleanup old releases
+      - name: Cleanup old CLI releases
         uses: actions/github-script@v7
         with:
           script: |
@@ -365,11 +380,12 @@ jobs:
               per_page: 100
             });
             
-            // Keep the latest 5 releases, delete the rest
-            const releasesToDelete = releases.slice(5);
+            // Filter CLI releases and keep the latest 5
+            const cliReleases = releases.filter(release => release.tag_name.startsWith('cli-'));
+            const releasesToDelete = cliReleases.slice(5);
             
             for (const release of releasesToDelete) {
-              console.log(`Deleting release: ${release.tag_name}`);
+              console.log(`Deleting CLI release: ${release.tag_name}`);
               await github.rest.repos.deleteRelease({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
@@ -398,12 +414,12 @@ jobs:
       - name: Notify success
         if: needs.create-release.result == 'success'
         run: |
-          echo "✅ Build and release completed successfully!"
-          echo "🎉 New executables are available for download"
+          echo "✅ CLI build and release completed successfully!"
+          echo "🎉 New CLI executables are available for download"
 
       - name: Notify failure
         if: needs.create-release.result == 'failure'
         run: |
-          echo "❌ Build or release failed!"
+          echo "❌ CLI build or release failed!"
           echo "🔍 Check the workflow logs for details"
           exit 1
