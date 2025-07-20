@@ -281,7 +281,7 @@ export async function checkStorageStatus(): Promise<{
   }
 }> {
   // Use the secure server-side proxy
-  const response = await fetch('/api/proxy?endpoint=storage/status', {
+  const response = await fetch('/api/proxy?endpoint=health/storage', {
     method: 'GET',
   });
   

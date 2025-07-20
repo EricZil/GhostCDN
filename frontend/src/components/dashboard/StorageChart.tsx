@@ -7,12 +7,14 @@ interface StorageData {
   value: number;
   color: string;
   count: number;
+  size: number;
 }
 
 interface StorageItem {
-  fileType?: string;
-  _sum?: { fileSize?: number };
-  _count?: number;
+  type: string;
+  size: number;
+  count: number;
+  percentage?: string;
 }
 
 interface StorageChartProps {
@@ -28,31 +30,45 @@ export default function StorageChart({ data, formatFileSize }: StorageChartProps
     '#ef4444', // Red
     '#10b981', // Emerald
     '#f97316', // Orange
+    '#3b82f6', // Blue
+    '#ec4899', // Pink
   ];
 
-  const chartData: StorageData[] = data.map((item, index) => ({
-    name: item.fileType || 'Unknown',
-    value: item._sum?.fileSize || 0,
-    color: colors[index % colors.length],
-    count: item._count || 0
-  }));
+  // Check if we have any actual file sizes
+  const totalSize = data.reduce((sum, item) => sum + (item.size || 0), 0);
+  const totalCount = data.reduce((sum, item) => sum + (item.count || 0), 0);
+  
+  // Use file count if all sizes are 0, otherwise use sizes
+  const useCount = totalSize === 0 && totalCount > 0;
+  
+  const chartData: StorageData[] = data
+    .filter(item => (item.count || 0) > 0) // Only show types with files
+    .map((item, index) => ({
+      name: item.type || 'Unknown',
+      value: useCount ? (item.count || 0) : (item.size || 0),
+      color: colors[index % colors.length],
+      count: item.count || 0,
+      size: item.size || 0
+    }));
 
-  const totalSize = chartData.reduce((sum, item) => sum + item.value, 0);
+  const total = chartData.reduce((sum, item) => sum + item.value, 0);
 
   const CustomTooltip = ({ active, payload }: { active?: boolean; payload?: Array<{ payload: StorageData }> }) => {
     if (active && payload && payload.length) {
       const data = payload[0].payload;
-      const percentage = ((data.value / totalSize) * 100).toFixed(1);
+      const percentage = total > 0 ? ((data.value / total) * 100).toFixed(1) : '0';
       
       return (
         <div className="bg-gray-900/95 backdrop-blur-sm border border-gray-700/50 rounded-xl p-4 shadow-2xl">
           <p className="text-white font-semibold">{data.name}</p>
           <p className="text-gray-300 text-sm">
-            Size: {formatFileSize(data.value)} ({percentage}%)
+            Files: {data.count} ({percentage}%)
           </p>
-          <p className="text-gray-300 text-sm">
-            Files: {data.count}
-          </p>
+          {data.size > 0 && (
+            <p className="text-gray-300 text-sm">
+              Size: {formatFileSize(data.size)}
+            </p>
+          )}
         </div>
       );
     }
@@ -67,7 +83,7 @@ export default function StorageChart({ data, formatFileSize }: StorageChartProps
     outerRadius?: number; 
     percent?: number; 
   }) => {
-    if (!percent || !cx || !cy || !midAngle || !innerRadius || !outerRadius || percent < 0.05) return null;
+    if (!percent || !cx || !cy || !midAngle || !innerRadius || !outerRadius || percent < 0.08) return null;
     
     const RADIAN = Math.PI / 180;
     const radius = innerRadius + (outerRadius - innerRadius) * 0.5;
@@ -95,7 +111,7 @@ export default function StorageChart({ data, formatFileSize }: StorageChartProps
           <div className="w-16 h-16 rounded-full bg-gray-800 flex items-center justify-center mb-4 mx-auto">
             <span className="text-2xl">📊</span>
           </div>
-          <p className="text-gray-400">No storage data available</p>
+          <p className="text-gray-400">No files uploaded yet</p>
         </div>
       </div>
     );
@@ -103,7 +119,13 @@ export default function StorageChart({ data, formatFileSize }: StorageChartProps
 
   return (
     <div className="w-full h-80">
-      <ResponsiveContainer width="100%" height="100%">
+      <div className="mb-2 text-center">
+        <p className="text-sm text-gray-400">
+          {useCount ? 'File Distribution by Type' : 'Storage Usage by Type'}
+        </p>
+      </div>
+      
+      <ResponsiveContainer width="100%" height="85%">
         <PieChart>
           <Pie
             data={chartData}
@@ -133,7 +155,7 @@ export default function StorageChart({ data, formatFileSize }: StorageChartProps
       </ResponsiveContainer>
       
       {/* Custom Legend */}
-      <div className="flex flex-wrap justify-center gap-4 mt-4">
+      <div className="flex flex-wrap justify-center gap-4 mt-2">
         {chartData.map((entry, index) => (
           <div key={index} className="flex items-center gap-2">
             <div 
@@ -148,4 +170,4 @@ export default function StorageChart({ data, formatFileSize }: StorageChartProps
       </div>
     </div>
   );
-} 
+}

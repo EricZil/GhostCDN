@@ -118,9 +118,9 @@ async function warmupCache() {
     
     // 3. Cache frequently accessed file types for faster lookup
     const fileTypes = await prisma.$queryRaw`
-      SELECT "contentType", COUNT(*) as count 
-      FROM "Image" 
-      GROUP BY "contentType" 
+      SELECT fileType, COUNT(*) as count 
+      FROM Image 
+      GROUP BY fileType 
       ORDER BY count DESC 
       LIMIT 10
     `;
@@ -132,13 +132,12 @@ async function warmupCache() {
     // 4. Cache total stats
     const totalStats = await prisma.image.aggregate({
       _count: { id: true },
-      _sum: { fileSize: true, viewCount: true }
+      _sum: { fileSize: true }
     });
     if (totalStats) {
       await cache.set('total-stats', {
         totalFiles: totalStats._count.id || 0,
         totalSize: totalStats._sum.fileSize || 0,
-        totalViews: totalStats._sum.viewCount || 0,
         timestamp: new Date().toISOString()
       }, 30 * 60 * 1000, cache.namespaces.ANALYTICS);
       console.log('[Cache Warmup] Total stats cached');

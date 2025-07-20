@@ -3,6 +3,7 @@ const { cache: redisCache } = require('./redis-cache');
 class CacheManager {
   constructor() {
     this.redisAvailable = false;
+    this.connectionChecked = false;
     this.checkRedisConnection();
     
     // Check Redis connection every 30 seconds
@@ -26,7 +27,11 @@ class CacheManager {
     try {
       const isHealthy = await redisCache.ping();
       if (isHealthy && !this.redisAvailable) {
-        console.log('[Cache Manager] Redis connection established');
+        // Only log the first time connection is established
+        if (!this.connectionChecked) {
+          console.log('[Cache Manager] Redis connection established');
+          this.connectionChecked = true;
+        }
         this.redisAvailable = true;
       } else if (!isHealthy && this.redisAvailable) {
         console.log('[Cache Manager] Redis connection lost');
@@ -272,18 +277,29 @@ class CacheManager {
   }
 }
 
-// Create singleton instance
-const cache = new CacheManager();
+// Create singleton instance - only create once
+let cacheInstance = null;
 
-// Graceful shutdown handlers
-process.on('SIGTERM', () => {
-  console.log('[Cache Manager] Shutting down cache manager...');
-  cache.destroy();
-});
+function getCacheInstance() {
+  if (!cacheInstance) {
+    cacheInstance = new CacheManager();
+    
+    // Graceful shutdown handlers - only set once
+    process.on('SIGTERM', () => {
+      console.log('[Cache Manager] Shutting down cache manager...');
+      cacheInstance.destroy();
+    });
 
-process.on('SIGINT', () => {
-  console.log('[Cache Manager] Shutting down cache manager...');
-  cache.destroy();
-});
+    process.on('SIGINT', () => {
+      console.log('[Cache Manager] Shutting down cache manager...');
+      cacheInstance.destroy();
+    });
+  }
+  return cacheInstance;
+}
 
-module.exports = { cache }; 
+module.exports = { 
+  get cache() {
+    return getCacheInstance();
+  }
+};

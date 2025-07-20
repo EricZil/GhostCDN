@@ -37,9 +37,7 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       setLoading(true);
       setError(null);
       
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-      
-      const response = await fetch(`${apiUrl}/api/public/settings`);
+      const response = await fetch('/api/proxy?endpoint=public/settings');
       
       if (!response.ok) {
         throw new Error('Failed to fetch settings');

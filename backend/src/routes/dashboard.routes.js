@@ -473,7 +473,7 @@ router.get('/storage/:userEmail', async (req, res) => {
     });
     
     // Get storage by file type
-    const storageByType = await prisma.image.groupBy({
+    const rawStorageByType = await prisma.image.groupBy({
       by: ['fileType'],
       where: { userId },
       _sum: { fileSize: true },
@@ -484,6 +484,67 @@ router.get('/storage/:userEmail', async (req, res) => {
     const storageLimit = 10 * 1024 * 1024 * 1024; // 10GB
     const storageUsed = storageStats._sum.fileSize || 0;
     const storagePercentage = (storageUsed / storageLimit) * 100;
+    
+    // Function to map MIME types to user-friendly categories
+    const getCategoryFromMimeType = (mimeType) => {
+      if (!mimeType) return 'Other';
+      
+      const type = mimeType.toLowerCase();
+      
+      if (type.startsWith('image/')) {
+        return 'Photos';
+      } else if (type.startsWith('video/')) {
+        return 'Videos';
+      } else if (type.startsWith('audio/')) {
+        return 'Audio';
+      } else if (type.includes('pdf') || type.includes('document') || type.includes('text') || 
+                 type.includes('word') || type.includes('excel') || type.includes('powerpoint') ||
+                 type.includes('spreadsheet') || type.includes('presentation')) {
+        return 'Documents';
+      } else if (type.includes('zip') || type.includes('rar') || type.includes('tar') || 
+                 type.includes('gzip') || type.includes('7z')) {
+        return 'Archives';
+      } else {
+        return 'Other';
+      }
+    };
+    
+    // Group by category instead of MIME type
+    const categoryMap = new Map();
+    
+    rawStorageByType.forEach(item => {
+      const category = getCategoryFromMimeType(item.fileType);
+      const size = item._sum.fileSize || 0;
+      const count = item._count || 0;
+      
+      if (categoryMap.has(category)) {
+        const existing = categoryMap.get(category);
+        categoryMap.set(category, {
+          type: category,
+          size: existing.size + size,
+          count: existing.count + count
+        });
+      } else {
+        categoryMap.set(category, {
+          type: category,
+          size,
+          count
+        });
+      }
+    });
+    
+    // Transform the data to match frontend expectations with percentages
+    const storageByType = Array.from(categoryMap.values()).map(item => ({
+      type: item.type,
+      size: item.size,
+      count: item.count,
+      percentage: storageUsed > 0 ? (item.size / storageUsed * 100).toFixed(1) : '0'
+    }));
+    
+    // Sort by size descending
+    storageByType.sort((a, b) => b.size - a.size);
+    
+    // Storage data transformed successfully
     
     res.json({
       success: true,

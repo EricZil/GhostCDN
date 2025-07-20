@@ -1,6 +1,8 @@
 const { Redis } = require('@upstash/redis');
 
 class RedisCache {
+  static initialized = false;
+  
   constructor() {
     try {
       // Initialize Upstash Redis client
@@ -23,7 +25,11 @@ class RedisCache {
       // Key prefix to namespace all keys for this application
       this.keyPrefix = 'ghostcdn';
       
-      console.log('[Redis Cache] Initialized Upstash Redis cache');
+      // Reduced logging - only log once per application startup
+      if (!RedisCache.initialized) {
+        console.log('[Redis Cache] Initialized Upstash Redis cache');
+        RedisCache.initialized = true;
+      }
     } catch (error) {
       console.error('[Redis Cache] Failed to initialize Upstash Redis:', error.message);
     }
@@ -75,7 +81,8 @@ class RedisCache {
       await this.redis.set(formattedKey, cacheData, { ex: ttlSeconds });
       
       this.stats.sets++;
-      console.log(`[Redis Cache] Set key: ${formattedKey} with TTL: ${ttlSeconds}s`);
+      // Reduced logging for cache operations
+      // console.log(`[Redis Cache] Set key: ${formattedKey} with TTL: ${ttlSeconds}s`);
       return true;
     } catch (error) {
       this.stats.errors++;
@@ -101,7 +108,7 @@ class RedisCache {
       
       if (cached === null || cached === undefined) {
         this.stats.misses++;
-        console.log(`[Redis Cache] Cache miss for key: ${formattedKey}`);
+        // console.log(`[Redis Cache] Cache miss for key: ${formattedKey}`);
         return null;
       }
       
@@ -122,7 +129,7 @@ class RedisCache {
       }
       
       this.stats.hits++;
-      console.log(`[Redis Cache] Cache hit for key: ${formattedKey}`);
+      // console.log(`[Redis Cache] Cache hit for key: ${formattedKey}`);
       
       // Return the data field if it exists, otherwise return the whole object
       return cacheData.data !== undefined ? cacheData.data : cacheData;
@@ -149,7 +156,7 @@ class RedisCache {
     try {
       const result = await this.redis.del(formattedKey);
       
-      console.log(`[Redis Cache] Deleted key: ${formattedKey}, result: ${result}`);
+      // console.log(`[Redis Cache] Deleted key: ${formattedKey}, result: ${result}`);
       return result > 0;
     } catch (error) {
       this.stats.errors++;
@@ -227,7 +234,8 @@ class RedisCache {
   async ping() {
     try {
       const result = await this.redis.ping();
-      console.log('[Redis Cache] Ping result:', result);
+      // Only log ping results when there's an issue or first time
+      // console.log('[Redis Cache] Ping result:', result);
       return result === 'PONG';
     } catch (error) {
       this.stats.errors++;
@@ -421,18 +429,29 @@ class RedisCache {
   }
 }
 
-// Create singleton instance
-const cache = new RedisCache();
+// Create singleton instance - only create once
+let cacheInstance = null;
 
-// Graceful shutdown handlers
-process.on('SIGTERM', () => {
-  console.log('[Redis Cache] Shutting down cache...');
-  cache.destroy();
-});
+function getCacheInstance() {
+  if (!cacheInstance) {
+    cacheInstance = new RedisCache();
+    
+    // Graceful shutdown handlers - only set once
+    process.on('SIGTERM', () => {
+      console.log('[Redis Cache] Shutting down cache...');
+      cacheInstance.destroy();
+    });
 
-process.on('SIGINT', () => {
-  console.log('[Redis Cache] Shutting down cache...');
-  cache.destroy();
-});
+    process.on('SIGINT', () => {
+      console.log('[Redis Cache] Shutting down cache...');
+      cacheInstance.destroy();
+    });
+  }
+  return cacheInstance;
+}
 
-module.exports = { cache }; 
+module.exports = { 
+  get cache() {
+    return getCacheInstance();
+  }
+};

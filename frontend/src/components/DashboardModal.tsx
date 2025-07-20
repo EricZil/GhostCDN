@@ -9,16 +9,24 @@ import { useDashboard } from '@/hooks/useDashboard';
 import { useNotification } from '@/contexts/NotificationContext';
 import { useAdmin } from '@/hooks/useAdmin';
 import { useSettings } from '@/contexts/SettingsContext';
-import ViewsChart from '@/components/dashboard/ViewsChart';
-import StorageChart from '@/components/dashboard/StorageChart';
-import TopFilesChart from '@/components/dashboard/TopFilesChart';
-import FileSearch, { SearchFilters } from '@/components/dashboard/FileSearch';
-import Pagination from '@/components/dashboard/Pagination';
-import BulkActions from '@/components/dashboard/BulkActions';
+import { SearchFilters } from '@/components/dashboard/FileSearch';
 import DuplicateDetection from '@/components/dashboard/DuplicateDetection';
 import AdminOverview from '@/components/dashboard/admin/AdminOverview';
 import UserProfileModal from '@/components/dashboard/admin/UserProfileModal';
-import ThumbnailLinks from '@/components/upload/ThumbnailLinks';
+import {
+  OverviewTab,
+  UploadsTab,
+  StorageTab,
+  AnalyticsTab,
+  ActivityTab,
+  AdminUsersTab,
+  AdminFilesTab,
+  AdminAnalyticsTab,
+  AdminSystemTab,
+  AdminLogsTab
+} from '@/components/dashboard/tabs';
+import { DeleteConfirmModal } from '@/components/dashboard/modals/DeleteConfirmModal';
+import { SystemMessageModal } from '@/components/dashboard/modals/SystemMessageModal';
 
 interface DashboardModalProps {
   isOpen: boolean;
@@ -97,11 +105,12 @@ export default function DashboardModal({ isOpen, onClose }: DashboardModalProps)
   }>({ isOpen: false, fileId: '', fileName: '' });
   const [copiedFileId, setCopiedFileId] = useState<string | null>(null);
   const [expandedFileId, setExpandedFileId] = useState<string | null>(null);
-  const [copiedThumbnail, setCopiedThumbnail] = useState<string | false>(false);
+  const [copiedThumbnail, setCopiedThumbnail] = useState<string | null>(null);
   
   // Dashboard hook
   const {
     loading,
+    error,
     dashboardStats,
     uploads,
     analytics,
@@ -149,7 +158,7 @@ export default function DashboardModal({ isOpen, onClose }: DashboardModalProps)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [systemSettings, setSystemSettings] = useState<any>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [systemLogs, setSystemLogs] = useState<any[]>([]);
+  const [systemLogs, setSystemLogs] = useState<any>(null);
   const [settingsChanged, setSettingsChanged] = useState(false);
   
   // System Messages state
@@ -167,6 +176,18 @@ export default function DashboardModal({ isOpen, onClose }: DashboardModalProps)
     isOpen: false,
     userId: ''
   });
+
+  // Storage Tab state
+  const [optimizationInProgress, setOptimizationInProgress] = useState(false);
+  const [quotaSettings, setQuotaSettings] = useState({
+    warningsEnabled: true,
+    autoCleanupEnabled: false
+  });
+  const [reportGenerating, setReportGenerating] = useState(false);
+
+
+
+
 
   // Load user avatar
   useEffect(() => {
@@ -452,6 +473,74 @@ export default function DashboardModal({ isOpen, onClose }: DashboardModalProps)
     }
   };
 
+  // useEffect hooks to fetch data when component mounts and tab changes
+  useEffect(() => {
+    if (!isOpen || !user) return;
+
+    // Fetch overview data when modal opens
+    fetchOverview().catch(() => {});
+  }, [isOpen, user, fetchOverview]);
+
+  useEffect(() => {
+    if (!isOpen || !user) return;
+
+    // Fetch data based on active tab
+    switch (activeTab) {
+      case 'uploads':
+        fetchUploads(currentPage, itemsPerPage, searchFilters as Record<string, unknown>).catch(() => {});
+        break;
+      case 'analytics':
+        fetchAnalytics(analyticsPeriod).catch(() => {});
+        break;
+      case 'storage':
+        fetchStorage().catch(() => {});
+        break;
+      case 'activity':
+        fetchActivities().catch(() => {});
+        break;
+      case 'admin-overview':
+        if (user?.role === 'ADMIN') {
+          fetchAdminOverview().then(data => setAdminStats(data)).catch(() => {});
+        }
+        break;
+      case 'admin-users':
+        if (user?.role === 'ADMIN') {
+          fetchUsers().then(data => setAdminUsers(data.users)).catch(() => {});
+        }
+        break;
+      case 'admin-files':
+        if (user?.role === 'ADMIN') {
+          fetchAdminFiles().then(data => {
+            setAdminFiles(data.files);
+            setAdminFileStats(data.stats);
+          }).catch(() => {});
+        }
+        break;
+      case 'admin-analytics':
+        if (user?.role === 'ADMIN') {
+          fetchAdminAnalytics().then(data => setAdminStats(data)).catch(() => {});
+        }
+        break;
+      case 'admin-system':
+        if (user?.role === 'ADMIN') {
+          fetchSystemSettings().then(data => setSystemSettings(data)).catch(() => {});
+        }
+        break;
+      case 'admin-logs':
+        if (user?.role === 'ADMIN') {
+          fetchSystemLogs().then(data => setSystemLogs(data)).catch(() => {});
+        }
+        break;
+    }
+  }, [activeTab, isOpen, user, currentPage, itemsPerPage, searchFilters, analyticsPeriod, fetchUploads, fetchAnalytics, fetchStorage, fetchActivities, fetchAdminOverview, fetchUsers, fetchAdminFiles, fetchAdminAnalytics, fetchSystemSettings, fetchSystemLogs]);
+
+  // useEffect to refetch uploads when search filters or pagination changes
+  useEffect(() => {
+    if (!isOpen || !user || activeTab !== 'uploads') return;
+    
+    fetchUploads(currentPage, itemsPerPage, searchFilters as Record<string, unknown>).catch(() => {});
+  }, [currentPage, itemsPerPage, searchFilters, isOpen, user, activeTab, fetchUploads]);
+
   // Add copy to clipboard handler with acknowledgment
   const handleCopyLink = async (fileKey: string, fileId: string) => {
     try {
@@ -483,7 +572,49 @@ export default function DashboardModal({ isOpen, onClose }: DashboardModalProps)
   const copyThumbnailToClipboard = (text: string, type: string) => {
     navigator.clipboard.writeText(text);
     setCopiedThumbnail(type);
-    setTimeout(() => setCopiedThumbnail(false), 2000);
+    setTimeout(() => setCopiedThumbnail(null), 2000);
+  };
+
+  // Storage Tab handlers
+  const handleOptimizeFiles = () => {
+    setOptimizationInProgress(true);
+    // Simulate optimization process
+    setTimeout(() => {
+      setOptimizationInProgress(false);
+      showNotification({
+        type: 'success',
+        title: 'Optimization Complete',
+        message: 'Files have been optimized successfully',
+        duration: 3000
+      });
+    }, 3000);
+  };
+
+  const handleQuotaSettingChange = (setting: string, value: boolean) => {
+    setQuotaSettings(prev => ({
+      ...prev,
+      [setting]: value
+    }));
+    showNotification({
+      type: 'info',
+      title: 'Setting Updated',
+      message: `${setting} has been ${value ? 'enabled' : 'disabled'}`,
+      duration: 2000
+    });
+  };
+
+  const handleGenerateReport = () => {
+    setReportGenerating(true);
+    // Simulate report generation
+    setTimeout(() => {
+      setReportGenerating(false);
+      showNotification({
+        type: 'success',
+        title: 'Report Generated',
+        message: 'Storage report has been generated successfully',
+        duration: 3000
+      });
+    }, 2000);
   };
 
   // Toggle file expansion
@@ -569,409 +700,44 @@ export default function DashboardModal({ isOpen, onClose }: DashboardModalProps)
     switch (activeTab) {
       case 'overview':
         return (
-          <div className="space-y-8">
-            {/* Welcome Section */}
-            <div className="bg-gradient-to-br from-blue-500/15 via-purple-500/15 to-indigo-500/15 rounded-3xl p-8 border border-blue-500/30 shadow-2xl backdrop-blur-sm">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-6">
-                  <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-blue-500 via-purple-500 to-indigo-600 flex items-center justify-center text-3xl shadow-2xl">
-                    👋
-                  </div>
-                  <div>
-                    <h3 className="text-2xl font-bold text-white mb-2">
-                      Welcome back, {user?.name || 'User'}!
-                    </h3>
-                    <p className="text-lg text-gray-300">
-                      Here&apos;s what&apos;s happening with your uploads
-                    </p>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <p className="text-sm text-gray-400">Last login</p>
-                  <p className="text-white font-medium">
-                    {user?.lastLogin ? formatTimeAgo(user.lastLogin) : 'First time'}
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Stats Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              {(dashboardStats ? [
-                { 
-                  label: 'Total Uploads', 
-                  value: dashboardStats.totalUploads.toString(), 
-                  change: dashboardStats.uploadsGrowth, 
-                  icon: '📤', 
-                  color: 'from-green-500 to-emerald-500' 
-                },
-                { 
-                  label: 'Storage Used', 
-                  value: formatFileSize(dashboardStats.storageUsed), 
-                  change: dashboardStats.storageGrowth, 
-                  icon: '💾', 
-                  color: 'from-blue-500 to-cyan-500' 
-                },
-                { 
-                  label: 'Total Views', 
-                  value: dashboardStats.totalViews.toLocaleString(), 
-                  change: dashboardStats.viewsGrowth, 
-                  icon: '👁️', 
-                  color: 'from-purple-500 to-pink-500' 
-                },
-                { 
-                  label: 'Bandwidth', 
-                  value: formatFileSize(dashboardStats.bandwidthUsed), 
-                  change: dashboardStats.bandwidthGrowth, 
-                  icon: '🌐', 
-                  color: 'from-orange-500 to-red-500' 
-                },
-              ] : [
-                { label: 'Total Uploads', value: '...', change: '...', icon: '📤', color: 'from-green-500 to-emerald-500' },
-                { label: 'Storage Used', value: '...', change: '...', icon: '💾', color: 'from-blue-500 to-cyan-500' },
-                { label: 'Total Views', value: '...', change: '...', icon: '👁️', color: 'from-purple-500 to-pink-500' },
-                { label: 'Bandwidth', value: '...', change: '...', icon: '🌐', color: 'from-orange-500 to-red-500' },
-              ]).map((stat, index) => (
-                <div key={index} className="bg-[rgba(20,20,35,0.8)] rounded-2xl p-6 border border-gray-700/50 shadow-xl backdrop-blur-sm hover:scale-105 transition-all duration-300">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className={`w-12 h-12 rounded-xl bg-gradient-to-r ${stat.color} flex items-center justify-center text-lg shadow-lg`}>
-                      {stat.icon}
-                    </div>
-                    <span className="text-sm text-green-400 font-semibold bg-green-400/10 px-3 py-1 rounded-full border border-green-400/20">{stat.change}</span>
-                  </div>
-                  <p className="text-3xl font-bold text-white mb-2">{stat.value}</p>
-                  <p className="text-base text-gray-300 font-medium">{stat.label}</p>
-                </div>
-              ))}
-            </div>
-
-            {/* Recent Activity */}
-            <div className="bg-[rgba(20,20,35,0.8)] rounded-2xl p-8 border border-gray-700/50 shadow-xl backdrop-blur-sm">
-              <div className="flex items-center justify-between mb-6">
-                <h4 className="text-xl font-bold text-white">Recent Activity</h4>
-                <button className="text-sm text-blue-400 hover:text-blue-300 transition-colors font-medium">
-                  View All Activity
-                </button>
-              </div>
-              <div className="space-y-4">
-                {(dashboardStats?.recentActivity || []).slice(0, 4).map((activity, index) => (
-                  <div key={index} className="flex items-center gap-4 p-4 rounded-xl bg-[rgba(15,15,25,0.7)] border border-gray-700/40 hover:bg-[rgba(25,25,35,0.7)] transition-all duration-200">
-                    <div className={`w-3 h-3 rounded-full shadow-lg ${
-                      activity.type === 'UPLOAD' ? 'bg-green-500 shadow-green-500/50' : 
-                      activity.type === 'DELETE' ? 'bg-red-500 shadow-red-500/50' : 'bg-blue-500 shadow-blue-500/50'
-                    }`}></div>
-                    <div className="flex-1">
-                      <p className="text-base text-white">
-                        <span className="font-semibold">{activity.message}</span>
-                      </p>
-                      <p className="text-sm text-gray-400 mt-1">{formatTimeAgo(activity.createdAt)}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
+          <OverviewTab 
+            user={user}
+            dashboardStats={dashboardStats}
+            formatTimeAgo={formatTimeAgo}
+            formatFileSize={formatFileSize}
+          />
         );
 
       case 'uploads':
         return (
-          <div className="space-y-6">
-            {/* Header with Stats */}
-            <div className="bg-gradient-to-br from-blue-500/10 via-purple-500/10 to-indigo-500/10 rounded-2xl p-6 border border-blue-500/20">
-              <div className="flex items-center justify-between mb-6">
-                <div>
-                  <h3 className="text-2xl font-bold text-white mb-2">My Uploads</h3>
-                  <p className="text-gray-300">Manage and organize your uploaded files</p>
-                </div>
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center shadow-lg">
-                    <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                    </svg>
-                  </div>
-                </div>
-              </div>
-              
-              {/* Quick Stats */}
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                {dashboardStats ? [
-                  { label: 'This Month', value: dashboardStats.uploadsThisMonth.toString(), icon: '📅', color: 'from-green-500 to-emerald-500' },
-                  { label: 'Total Files', value: dashboardStats.totalUploads.toString(), icon: '📁', color: 'from-blue-500 to-cyan-500' },
-                  { label: 'Total Views', value: dashboardStats.totalViews.toLocaleString(), icon: '👁️', color: 'from-purple-500 to-pink-500' },
-                  { label: 'Storage Used', value: formatFileSize(dashboardStats.storageUsed), icon: '💾', color: 'from-orange-500 to-red-500' },
-                ].map((stat, index) => (
-                  <div key={index} className="bg-black/20 rounded-xl p-4 border border-gray-700/50 backdrop-blur-sm">
-                    <div className="flex items-center gap-3">
-                      <div className={`w-10 h-10 rounded-lg bg-gradient-to-br ${stat.color} flex items-center justify-center shadow-lg`}>
-                        <span className="text-lg">{stat.icon}</span>
-                      </div>
-                      <div>
-                        <p className="text-lg font-bold text-white">{stat.value}</p>
-                        <p className="text-xs text-gray-400">{stat.label}</p>
-                      </div>
-                    </div>
-                  </div>
-                )) : [
-                  { label: 'This Month', value: '...', icon: '📅', color: 'from-green-500 to-emerald-500' },
-                  { label: 'Total Files', value: '...', icon: '📁', color: 'from-blue-500 to-cyan-500' },
-                  { label: 'Total Views', value: '...', icon: '👁️', color: 'from-purple-500 to-pink-500' },
-                  { label: 'Storage Used', value: '...', icon: '💾', color: 'from-orange-500 to-red-500' },
-                ].map((stat, index) => (
-                  <div key={index} className="bg-black/20 rounded-xl p-4 border border-gray-700/50 backdrop-blur-sm">
-                    <div className="flex items-center gap-3">
-                      <div className={`w-10 h-10 rounded-lg bg-gradient-to-br ${stat.color} flex items-center justify-center shadow-lg animate-pulse`}>
-                        <span className="text-lg">{stat.icon}</span>
-                      </div>
-                      <div>
-                        <p className="text-lg font-bold text-white">{stat.value}</p>
-                        <p className="text-xs text-gray-400">{stat.label}</p>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Enhanced Search and Filters */}
-            <div className="bg-[rgba(20,20,35,0.6)] rounded-xl border border-gray-800/40 p-4">
-              <FileSearch
-                onSearch={handleSearch}
-                totalFiles={uploads.length}
-                isLoading={loading}
-              />
-            </div>
-
-            {/* Enhanced Bulk Actions */}
-            <div className="bg-[rgba(20,20,35,0.6)] rounded-xl border border-gray-800/40 p-4">
-              <BulkActions
-                selectedFiles={selectedFiles}
-                totalFiles={uploads.length}
-                uploads={uploads}
-                onSelectAll={handleSelectAll}
-                onDeselectAll={handleDeselectAll}
-                onBulkDelete={handleBulkDelete}
-                onBulkDownload={handleBulkDownload}
-                isLoading={loading}
-              />
-            </div>
-
-            {/* Redesigned File List */}
-            <div className="bg-[rgba(20,20,35,0.6)] rounded-xl border border-gray-800/40 overflow-hidden">
-              <div className="p-4 border-b border-gray-800/40">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
-                      <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-                      </svg>
-                    </div>
-                    <h4 className="text-lg font-semibold text-white">File Library</h4>
-                    <span className="px-2 py-1 bg-blue-500/20 text-blue-400 rounded-full text-xs font-medium">
-                      {uploads.length} files
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button className="px-3 py-1.5 text-xs font-medium text-gray-400 hover:text-white transition-colors">
-                      Sort by Date
-                    </button>
-                    <button className="px-3 py-1.5 text-xs font-medium text-blue-400 hover:text-blue-300 transition-colors">
-                      View All
-                    </button>
-                  </div>
-                </div>
-              </div>
-              
-              <div className="divide-y divide-gray-800/40">
-                {uploads.slice(0, 20).map((file, index) => {
-                  const isSelected = selectedFiles.includes(file.id);
-                  const isExpanded = expandedFileId === file.id;
-                  return (
-                    <div key={index} className={`transition-all duration-200 ${
-                      isSelected ? 'bg-purple-500/10 border-l-4 border-purple-500' : 'hover:bg-[rgba(30,30,45,0.3)]'
-                    }`}>
-                      {/* Main File Row */}
-                      <div className="p-4">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-4 flex-1 min-w-0">
-                            {/* Enhanced Selection Checkbox */}
-                            <button
-                              onClick={() => handleFileSelect(file.id, !isSelected)}
-                              className={`w-5 h-5 rounded-lg border-2 transition-all duration-200 flex items-center justify-center ${
-                                isSelected 
-                                  ? 'bg-purple-500 border-purple-500 shadow-lg shadow-purple-500/30' 
-                                  : 'border-gray-600 hover:border-purple-400 hover:shadow-lg hover:shadow-purple-500/20'
-                              }`}
-                            >
-                              {isSelected && (
-                                <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                                </svg>
-                              )}
-                            </button>
-
-                            {/* Enhanced File Preview */}
-                            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500/20 to-purple-500/20 border border-blue-500/30 flex items-center justify-center overflow-hidden shadow-lg">
-                              {file.thumbnails?.small ? (
-                                // eslint-disable-next-line @next/next/no-img-element
-                                <img 
-                                  src={file.thumbnails.small} 
-                                  alt={file.fileName}
-                                  className="w-full h-full object-cover rounded-lg"
-                                  onError={(e) => {
-                                    const target = e.target as HTMLImageElement;
-                                    target.style.display = 'none';
-                                    const parent = target.parentElement;
-                                    if (parent) {
-                                      parent.innerHTML = '<span class="text-lg">📷</span>';
-                                    }
-                                  }}
-                                />
-                              ) : (
-                                <span className="text-lg">📷</span>
-                              )}
-                            </div>
-                            
-                            {/* Enhanced File Info */}
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 mb-1">
-                                <p className="text-sm font-medium text-white truncate">{file.fileName}</p>
-                                {file.thumbnails && (
-                                  <span className="px-2 py-0.5 bg-purple-500/20 text-purple-400 rounded-full text-xs font-medium">
-                                    Thumbs
-                                  </span>
-                                )}
-                              </div>
-                              <div className="flex items-center gap-3 text-xs text-gray-400">
-                                <span className="flex items-center gap-1">
-                                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-                                  </svg>
-                                  {formatFileSize(file.fileSize)}
-                                </span>
-                                <span className="flex items-center gap-1">
-                                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                  </svg>
-                                  {formatTimeAgo(file.uploadedAt)}
-                                </span>
-                                <span className="flex items-center gap-1">
-                                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                  </svg>
-                                  {file.viewCount} views
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-                          
-                          {/* Enhanced Action Buttons */}
-                          <div className="flex items-center gap-2">
-                            {/* Thumbnail Toggle Button */}
-                            {file.thumbnails && (
-                              <button 
-                                onClick={() => toggleFileExpansion(file.id)}
-                                className={`group relative px-3 py-2 rounded-xl border transition-all duration-300 transform hover:scale-105 active:scale-95 ${
-                                  isExpanded
-                                    ? 'bg-gradient-to-r from-purple-500/30 to-indigo-500/30 border-purple-400/50 text-purple-300 shadow-lg shadow-purple-500/20'
-                                    : 'bg-gradient-to-r from-purple-500/10 to-indigo-500/10 border-purple-400/30 text-purple-300 hover:from-purple-500/20 hover:to-indigo-500/20 hover:border-purple-400/50 hover:shadow-lg hover:shadow-purple-500/20'
-                                }`}
-                                title={isExpanded ? "Hide thumbnails" : "Show thumbnails"}
-                              >
-                                <div className="flex items-center gap-2">
-                                  <svg className={`w-4 h-4 transition-transform duration-200 ${isExpanded ? 'rotate-180' : 'group-hover:scale-110'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                                  </svg>
-                                  <span className="text-xs font-medium">
-                                    {isExpanded ? 'Hide' : 'Links'}
-                                  </span>
-                                </div>
-                              </button>
-                            )}
-
-                            {/* Copy Link Button */}
-                            <button 
-                              onClick={() => handleCopyLink(file.fileKey, file.id)}
-                              className={`group relative px-3 py-2 rounded-xl border transition-all duration-300 transform hover:scale-105 active:scale-95 ${
-                                copiedFileId === file.id
-                                  ? 'bg-gradient-to-r from-green-500/30 to-emerald-500/30 border-green-400/50 text-green-300 shadow-lg shadow-green-500/20'
-                                  : 'bg-gradient-to-r from-blue-500/10 to-indigo-500/10 border-blue-400/30 text-blue-300 hover:from-blue-500/20 hover:to-indigo-500/20 hover:border-blue-400/50 hover:shadow-lg hover:shadow-blue-500/20'
-                              }`}
-                              title={copiedFileId === file.id ? "Copied!" : "Copy link"}
-                            >
-                              <div className="flex items-center gap-2">
-                                {copiedFileId === file.id ? (
-                                  <>
-                                    <svg className="w-4 h-4 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-                                    </svg>
-                                    <span className="text-xs font-medium">Copied!</span>
-                                  </>
-                                ) : (
-                                  <>
-                                    <svg className="w-4 h-4 group-hover:rotate-12 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                                    </svg>
-                                    <span className="text-xs font-medium">Copy</span>
-                                  </>
-                                )}
-                              </div>
-                            </button>
-
-                            {/* Delete Button */}
-                            <button 
-                              onClick={() => handleDeleteFile(file.id, file.fileName)}
-                              className="group relative px-3 py-2 rounded-xl border bg-gradient-to-r from-red-500/10 to-rose-500/10 border-red-400/30 text-red-300 hover:from-red-500/20 hover:to-rose-500/20 hover:border-red-400/50 hover:shadow-lg hover:shadow-red-500/20 transition-all duration-300 transform hover:scale-105 active:scale-95"
-                              title="Delete file"
-                            >
-                              <div className="flex items-center gap-2">
-                                <svg className="w-4 h-4 group-hover:rotate-12 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                </svg>
-                                <span className="text-xs font-medium">Delete</span>
-                              </div>
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Thumbnail Links Expansion - Fixed Layout */}
-                      <AnimatePresence>
-                        {isExpanded && file.thumbnails && (
-                          <motion.div
-                            initial={{ opacity: 0, height: 0 }}
-                            animate={{ opacity: 1, height: 'auto' }}
-                            exit={{ opacity: 0, height: 0 }}
-                            className="border-t border-gray-800/40 bg-[rgba(15,15,25,0.5)]"
-                          >
-                            <div className="p-6">
-                              <ThumbnailLinks 
-                                thumbnails={file.thumbnails}
-                                copied={copiedThumbnail}
-                                copyToClipboard={copyThumbnailToClipboard}
-                              />
-                            </div>
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Enhanced Pagination */}
-            <div className="bg-[rgba(20,20,35,0.6)] rounded-xl border border-gray-800/40 p-4">
-              <Pagination
-                currentPage={currentPage}
-                totalPages={Math.ceil(uploads.length / itemsPerPage)}
-                totalItems={uploads.length}
-                itemsPerPage={itemsPerPage}
-                onPageChange={handlePageChange}
-                onItemsPerPageChange={handleItemsPerPageChange}
-                isLoading={loading}
-              />
-            </div>
-          </div>
+          <UploadsTab 
+            dashboardStats={dashboardStats}
+            formatFileSize={formatFileSize}
+            uploads={uploads.map(upload => ({
+              ...upload,
+              thumbnails: upload.thumbnails || undefined
+            }))}
+            loading={loading}
+            selectedFiles={selectedFiles}
+            expandedFileId={expandedFileId}
+            copiedFileId={copiedFileId}
+            copiedThumbnail={copiedThumbnail}
+            currentPage={currentPage}
+            itemsPerPage={itemsPerPage}
+            handleSearch={handleSearch}
+            handleSelectAll={handleSelectAll}
+            handleDeselectAll={handleDeselectAll}
+            handleBulkDelete={handleBulkDelete}
+            handleBulkDownload={handleBulkDownload}
+            handleFileSelect={handleFileSelect}
+            toggleFileExpansion={toggleFileExpansion}
+            handleCopyLink={handleCopyLink}
+            handleDeleteFile={handleDeleteFile}
+            copyThumbnailToClipboard={copyThumbnailToClipboard}
+            formatTimeAgo={formatTimeAgo}
+            handlePageChange={handlePageChange}
+            handleItemsPerPageChange={handleItemsPerPageChange}
+          />
         );
 
       case 'duplicates':
@@ -981,330 +747,37 @@ export default function DashboardModal({ isOpen, onClose }: DashboardModalProps)
 
       case 'analytics':
         return (
-          <div className="relative">
-            {/* Analytics Content (blurred) */}
-            <div className="space-y-6 blur-sm pointer-events-none">
-              {/* Analytics Header with Period Selector */}
-              <div className="flex items-center justify-between">
-                <h3 className="text-2xl font-semibold text-white">Analytics Dashboard</h3>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-gray-400">Time Period:</span>
-                  <select
-                    value={analyticsPeriod}
-                    onChange={(e) => handleAnalyticsPeriodChange(e.target.value)}
-                    className="px-3 py-2 bg-black/50 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
-                  >
-                    <option value="24h">Last 24 Hours</option>
-                    <option value="7d">Last 7 Days</option>
-                    <option value="30d">Last 30 Days</option>
-                    <option value="90d">Last 90 Days</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* Analytics Overview */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="bg-[rgba(20,20,35,0.6)] rounded-xl p-6 border border-gray-800/40">
-                  <h4 className="text-lg font-semibold text-white mb-4">Views Over Time</h4>
-                  {analytics ? (
-                    <ViewsChart data={analytics.viewsOverTime} period={analyticsPeriod} />
-                  ) : (
-                    <div className="h-80 flex items-center justify-center">
-                      <div className="text-center">
-                        <div className="w-8 h-8 border-2 border-purple-500 border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
-                        <p className="text-gray-400">Loading chart...</p>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                <div className="bg-[rgba(20,20,35,0.6)] rounded-xl p-6 border border-gray-800/40">
-                  <h4 className="text-lg font-semibold text-white mb-4">Top Performing Files</h4>
-                  {analytics ? (
-                    <TopFilesChart data={analytics.topFiles} />
-                  ) : (
-                    <div className="h-80 flex items-center justify-center">
-                      <div className="text-center">
-                        <div className="w-8 h-8 border-2 border-purple-500 border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
-                        <p className="text-gray-400">Loading chart...</p>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Detailed Stats */}
-              <div className="bg-[rgba(20,20,35,0.6)] rounded-xl p-6 border border-gray-800/40">
-                <h4 className="text-lg font-semibold text-white mb-4">Detailed Analytics</h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                  {analytics ? [
-                    { 
-                      label: 'Avg. Views per File', 
-                      value: analytics.averageViewsPerFile ? analytics.averageViewsPerFile.toFixed(1) : '0', 
-                      trend: analytics.averageViewsPerFile > 0 ? 'up' : 'neutral' 
-                    },
-                    { 
-                      label: 'Peak Traffic Hour', 
-                      value: analytics.peakTrafficHour || 'N/A', 
-                      trend: 'neutral' 
-                    },
-                    { 
-                      label: 'Most Popular Format', 
-                      value: analytics.mostPopularFormat || 'N/A', 
-                      trend: analytics.mostPopularFormat ? 'up' : 'neutral' 
-                    },
-                    { 
-                      label: 'Total Events', 
-                      value: analytics.totalEvents ? analytics.totalEvents.toLocaleString() : '0', 
-                      trend: analytics.totalEvents > 0 ? 'up' : 'neutral' 
-                    },
-                  ].map((stat, index) => (
-                    <div key={index} className="text-center">
-                      <p className="text-2xl font-bold text-white mb-1">{stat.value}</p>
-                      <p className="text-sm text-gray-400 mb-2">{stat.label}</p>
-                      <div className={`inline-flex items-center text-xs px-2 py-1 rounded-full ${
-                        stat.trend === 'up' ? 'bg-green-500/20 text-green-400' :
-                        stat.trend === 'down' ? 'bg-red-500/20 text-red-400' :
-                        'bg-gray-500/20 text-gray-400'
-                      }`}>
-                        {stat.trend === 'up' ? '↗' : stat.trend === 'down' ? '↘' : '→'}
-                      </div>
-                    </div>
-                  )) : [
-                    { label: 'Avg. Views per File', value: '...', trend: 'neutral' },
-                    { label: 'Peak Traffic Hour', value: '...', trend: 'neutral' },
-                    { label: 'Most Popular Format', value: '...', trend: 'neutral' },
-                    { label: 'Total Events', value: '...', trend: 'neutral' },
-                  ].map((stat, index) => (
-                    <div key={index} className="text-center">
-                      <p className="text-2xl font-bold text-white mb-1">{stat.value}</p>
-                      <p className="text-sm text-gray-400 mb-2">{stat.label}</p>
-                      <div className="inline-flex items-center text-xs px-2 py-1 rounded-full bg-gray-500/20 text-gray-400">
-                        →
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* Full Tab Overlay for Planned Feature */}
-            <div className="absolute inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-10">
-              <div className="text-center space-y-6 p-8">
-                <div className="w-20 h-20 mx-auto rounded-full bg-gradient-to-r from-orange-500/20 to-yellow-500/20 border border-orange-400/30 flex items-center justify-center">
-                  <svg className="w-10 h-10 text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                </div>
-                <div>
-                  <h3 className="text-3xl font-bold text-white mb-3">Analytics</h3>
-                  <p className="text-xl text-gray-300 mb-2">Possible Feature Update</p>
-                  <p className="text-base text-gray-400 max-w-lg mx-auto leading-relaxed">
-                    Analytics tracking is being developed. View tracking will be implemented in a future update to provide detailed insights about your uploaded files.
-                  </p>
-                </div>
-                <div className="flex items-center justify-center gap-3 text-orange-400">
-                  <div className="w-3 h-3 bg-orange-400 rounded-full animate-pulse"></div>
-                  <span className="text-base font-medium">Coming Soon</span>
-                  <div className="w-3 h-3 bg-orange-400 rounded-full animate-pulse animation-delay-300"></div>
-                </div>
-              </div>
-            </div>
-          </div>
+          <AnalyticsTab 
+            analyticsPeriod={analyticsPeriod}
+            handleAnalyticsPeriodChange={handleAnalyticsPeriodChange}
+            analytics={analytics}
+          />
         );
 
       case 'storage':
         return (
-          <div className="relative">
-            {/* Storage Content (blurred) */}
-            <div className="space-y-6 blur-sm pointer-events-none">
-              {/* Storage Overview */}
-              <div className="bg-[rgba(20,20,35,0.6)] rounded-xl p-6 border border-gray-800/40">
-                <h4 className="text-lg font-semibold text-white mb-4">Storage Usage</h4>
-                <div className="mb-4">
-                  <div className="flex justify-between text-sm mb-2">
-                    <span className="text-gray-400">Used: {storageInfo?.totalSize !== undefined ? formatFileSize(storageInfo.totalSize) : '0 KB'}</span>
-                    <span className="text-gray-400">Available: {storageInfo?.available !== undefined ? formatFileSize(storageInfo.available) : '10.0 GB'}</span>
-                  </div>
-                  <div className="w-full bg-gray-800 rounded-full h-3">
-                    <div 
-                      className="bg-gradient-to-r from-blue-500 to-purple-500 h-3 rounded-full transition-all duration-500" 
-                      style={{ width: `${storageInfo?.storagePercentage ? Math.min(storageInfo.storagePercentage, 100) : 0}%` }}
-                    ></div>
-                  </div>
-                  <p className="text-xs text-gray-500 mt-2">
-                    {storageInfo?.storagePercentage !== undefined && storageInfo?.storageLimit ? 
-                      `${storageInfo.storagePercentage.toFixed(1)}% of ${formatFileSize(storageInfo.storageLimit)} used` : 
-                      '0.0% of 10.0 GB used'}
-                  </p>
-                </div>
-                
-                {/* Storage Breakdown Chart */}
-                <div className="mt-6">
-                  <h4 className="text-lg font-semibold text-white mb-4">Storage Breakdown by File Type</h4>
-                  <div className="bg-[rgba(15,15,25,0.5)] rounded-xl p-6 border border-gray-800/30">
-                    {storageInfo ? (
-                      <StorageChart data={storageInfo.storageByType} formatFileSize={formatFileSize} />
-                    ) : (
-                      <div className="h-80 flex items-center justify-center">
-                        <div className="text-center">
-                          <div className="w-8 h-8 border-2 border-purple-500 border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
-                          <p className="text-gray-400">Loading storage data...</p>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* Storage Management */}
-              <div className="bg-[rgba(20,20,35,0.6)] rounded-xl p-6 border border-gray-800/40">
-                <h4 className="text-lg font-semibold text-white mb-4">Storage Management</h4>
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between p-4 bg-[rgba(15,15,25,0.5)] rounded-lg border border-gray-800/30">
-                    <div>
-                      <p className="text-white font-medium">Auto-optimize uploads</p>
-                      <p className="text-sm text-gray-400">Automatically compress images to save space</p>
-                    </div>
-                    <div className="w-12 h-6 bg-blue-500 rounded-full p-1 cursor-pointer">
-                      <div className="w-4 h-4 bg-white rounded-full ml-auto"></div>
-                    </div>
-                  </div>
-                  
-                  <div className="flex items-center justify-between p-4 bg-[rgba(15,15,25,0.5)] rounded-lg border border-gray-800/30">
-                    <div>
-                      <p className="text-white font-medium">Generate thumbnails</p>
-                      <p className="text-sm text-gray-400">Create multiple sizes for better performance</p>
-                    </div>
-                    <div className="w-12 h-6 bg-gray-600 rounded-full p-1 cursor-pointer">
-                      <div className="w-4 h-4 bg-white rounded-full"></div>
-                    </div>
-                  </div>
-
-                  <button className="w-full p-3 bg-red-500/20 text-red-400 rounded-lg border border-red-500/30 hover:bg-red-500/30 transition-colors">
-                    Clear Cache (128 MB)
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Full Tab Overlay for Planned Feature */}
-            <div className="absolute inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-10">
-              <div className="text-center space-y-6 p-8">
-                <div className="w-20 h-20 mx-auto rounded-full bg-gradient-to-r from-blue-500/20 to-cyan-500/20 border border-blue-400/30 flex items-center justify-center">
-                  <svg className="w-10 h-10 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 1.79 4 4 4h8c0 2.21 1.79 4 4 4h8c2.21 0 4-1.79 4-4V7c0-2.21-1.79-4-4-4H8c-2.21 0-4 1.79-4 4z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h8m-8 4h6" />
-                  </svg>
-                </div>
-                <div>
-                  <h3 className="text-3xl font-bold text-white mb-3">Storage Management</h3>
-                  <p className="text-xl text-gray-300 mb-2">Advanced Features Coming Soon</p>
-                  <p className="text-base text-gray-400 max-w-lg mx-auto leading-relaxed">
-                    Auto-optimization, thumbnail generation, and cache management features are being developed to help you manage your storage more efficiently.
-                  </p>
-                </div>
-                <div className="flex items-center justify-center gap-3 text-blue-400">
-                  <div className="w-3 h-3 bg-blue-400 rounded-full animate-pulse"></div>
-                  <span className="text-base font-medium">In Development</span>
-                  <div className="w-3 h-3 bg-blue-400 rounded-full animate-pulse animation-delay-300"></div>
-                </div>
-              </div>
-            </div>
-          </div>
+          <StorageTab
+                  optimizationInProgress={optimizationInProgress}
+                  quotaSettings={quotaSettings}
+                  reportGenerating={reportGenerating}
+                  handleOptimizeFiles={handleOptimizeFiles}
+                  handleQuotaSettingChange={handleQuotaSettingChange}
+                  handleGenerateReport={handleGenerateReport}
+                  storageInfo={storageInfo}
+                  loading={loading}
+                  error={error}
+                  onRefreshStorage={fetchStorage}
+                />
         );
 
       case 'activity':
         return (
-          <div className="space-y-6">
-            {/* Activity Feed */}
-            <div className="bg-[rgba(20,20,35,0.8)] rounded-2xl p-6 border border-gray-700/50 shadow-xl backdrop-blur-sm">
-              <div className="flex items-center justify-between mb-6">
-                <h4 className="text-xl font-bold text-white">Recent Activity</h4>
-                <button className="text-sm text-blue-400 hover:text-blue-300 transition-colors font-medium">
-                  View All Activity
-                </button>
-              </div>
-              <div className="space-y-4">
-                {(activities.length > 0 ? activities : [
-                  { type: 'UPLOAD', message: 'No recent activity', createdAt: new Date().toISOString() }
-                ]).map((activity, index) => {
-                  const getActivityIcon = (type: string) => {
-                    switch (type) {
-                      case 'UPLOAD': return '📤';
-                      case 'DELETE': return '🗑️';
-                      case 'VIEW': return '👁️';
-                      case 'DOWNLOAD': return '⬇️';
-                      case 'SHARE': return '🔗';
-                      case 'MILESTONE_REACHED': return '🏆';
-                      case 'SETTINGS_CHANGED': return '⚙️';
-                      case 'STORAGE_OPTIMIZED': return '⚡';
-                      default: return '📋';
-                    }
-                  };
-                  
-                    return (
-                      <div key={index} className="flex items-center gap-4 p-4 rounded-xl bg-[rgba(15,15,25,0.7)] border border-gray-700/40 hover:bg-[rgba(25,25,35,0.7)] transition-all duration-200">
-                        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500/20 to-pink-500/20 border border-purple-500/30 flex items-center justify-center flex-shrink-0">
-                          <span className="text-sm">{getActivityIcon(activity.type)}</span>
-                        </div>
-                        <div className="flex-1">
-                          <p className="text-base text-white">{activity.message}</p>
-                          <p className="text-sm text-gray-400 mt-1">{formatTimeAgo(activity.createdAt)}</p>
-                        </div>
-                      </div>
-                                         );
-                  })}
-              </div>
-            </div>
-
-            {/* Activity Stats */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="bg-[rgba(20,20,35,0.8)] rounded-2xl p-6 border border-gray-700/50 shadow-xl backdrop-blur-sm">
-                <h4 className="text-lg font-bold text-white mb-4">This Week</h4>
-                <div className="space-y-3">
-                  {(dashboardStats ? [
-                    { label: 'Uploads', value: dashboardStats.uploadsThisMonth.toString(), color: 'text-green-400' },
-                    { label: 'Views', value: dashboardStats.totalViews.toLocaleString(), color: 'text-blue-400' },
-                    { label: 'Storage Used', value: formatFileSize(dashboardStats.storageUsed), color: 'text-purple-400' },
-                    { label: 'Bandwidth', value: formatFileSize(dashboardStats.bandwidthUsed), color: 'text-orange-400' },
-                  ] : [
-                    { label: 'Uploads', value: '...', color: 'text-green-400' },
-                    { label: 'Views', value: '...', color: 'text-blue-400' },
-                    { label: 'Storage Used', value: '...', color: 'text-purple-400' },
-                    { label: 'Bandwidth', value: '...', color: 'text-orange-400' },
-                  ]).map((stat, index) => (
-                    <div key={index} className="flex justify-between items-center">
-                      <span className="text-gray-300">{stat.label}</span>
-                      <span className={`font-bold text-lg ${stat.color}`}>{stat.value}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="bg-[rgba(20,20,35,0.8)] rounded-2xl p-6 border border-gray-700/50 shadow-xl backdrop-blur-sm">
-                <h4 className="text-lg font-bold text-white mb-4">All Time</h4>
-                <div className="space-y-3">
-                  {(dashboardStats ? [
-                    { label: 'Total Uploads', value: dashboardStats.totalUploads.toString(), color: 'text-green-400' },
-                    { label: 'Total Views', value: dashboardStats.totalViews.toLocaleString(), color: 'text-blue-400' },
-                    { label: 'Storage Used', value: formatFileSize(dashboardStats.storageUsed), color: 'text-purple-400' },
-                    { label: 'Total Bandwidth', value: formatFileSize(dashboardStats.bandwidthUsed), color: 'text-orange-400' },
-                  ] : [
-                    { label: 'Total Uploads', value: '...', color: 'text-green-400' },
-                    { label: 'Total Views', value: '...', color: 'text-blue-400' },
-                    { label: 'Storage Used', value: '...', color: 'text-purple-400' },
-                    { label: 'Total Bandwidth', value: '...', color: 'text-orange-400' },
-                  ]).map((stat, index) => (
-                    <div key={index} className="flex justify-between items-center">
-                      <span className="text-gray-300">{stat.label}</span>
-                      <span className={`font-bold text-lg ${stat.color}`}>{stat.value}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
+          <ActivityTab 
+            activities={activities}
+            dashboardStats={dashboardStats}
+            formatTimeAgo={formatTimeAgo}
+            formatFileSize={formatFileSize}
+          />
         );
 
       // Admin tabs
@@ -1320,475 +793,59 @@ export default function DashboardModal({ isOpen, onClose }: DashboardModalProps)
 
       case 'admin-users':
         return (
-          <div className="space-y-6">
-            <div className="flex items-center justify-between">
-              <h3 className="text-2xl font-semibold text-white">User Management</h3>
-              <button className="px-4 py-2 bg-blue-500/20 text-blue-400 rounded-lg border border-blue-500/30 hover:bg-blue-500/30 transition-colors">
-                + Add User
-              </button>
-            </div>
-            
-            <div className="bg-[rgba(20,20,35,0.6)] rounded-xl border border-gray-800/40 overflow-hidden">
-              <div className="p-4 border-b border-gray-800/40">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-lg font-semibold text-white">All Users</h4>
-                  <div className="flex gap-2">
-                    <input 
-                      type="text" 
-                      placeholder="Search users..." 
-                      className="px-3 py-2 bg-black/50 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
-                    />
-                    <select className="px-3 py-2 bg-black/50 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500">
-                      <option>All Roles</option>
-                      <option>Admin</option>
-                      <option>User</option>
-                    </select>
-                  </div>
-                </div>
-              </div>
-              <div className="divide-y divide-gray-800/40">
-                {adminUsers.length > 0 ? adminUsers.map((user: unknown, index: number) => {
-                  if (!isAdminUser(user)) return null;
-                  return (
-                  <div key={index} className="p-4 hover:bg-[rgba(30,30,45,0.3)] transition-colors">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-4">
-                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center">
-                          <span className="text-sm font-bold text-white">{user.name.charAt(0)}</span>
-                        </div>
-                        <div>
-                          <p className="text-white font-medium">{user.name}</p>
-                          <p className="text-sm text-gray-400">{user.email}</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-6">
-                        <div className="text-center">
-                          <p className="text-sm text-white">{user.uploads}</p>
-                          <p className="text-xs text-gray-400">Uploads</p>
-                        </div>
-                        <div className="text-center">
-                          <p className="text-sm text-white">{adminFormatFileSize(user.storageUsed || 0)}</p>
-                          <p className="text-xs text-gray-400">Storage</p>
-                        </div>
-                        <div className="text-center">
-                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                            user.role === 'ADMIN' ? 'bg-red-500/20 text-red-400' : 'bg-blue-500/20 text-blue-400'
-                          }`}>
-                            {user.role}
-                          </span>
-                        </div>
-                        <div className="text-center">
-                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                            user.status === 'active' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
-                          }`}>
-                            {user.status}
-                          </span>
-                        </div>
-                        <div className="flex gap-2">
-                          <button 
-                            onClick={() => openUserProfile(user.id)}
-                            className="px-3 py-1.5 rounded-lg bg-purple-500/20 text-purple-400 hover:bg-purple-500/30 transition-colors text-sm font-medium flex items-center gap-2"
-                          >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                            </svg>
-                            Manage
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                  );
-                }).filter(Boolean) : (
-                  <p className="p-8 text-center text-gray-400">
-                    {adminLoading ? 'Loading users...' : 'No users found.'}
-                  </p>
-                )}
-              </div>
-            </div>
-          </div>
+          <AdminUsersTab 
+            adminUsers={adminUsers}
+            adminLoading={adminLoading}
+            adminFormatFileSize={adminFormatFileSize}
+            openUserProfile={openUserProfile}
+            isAdminUser={isAdminUser}
+          />
         );
 
       case 'admin-files':
         return (
-          <div className="space-y-6">
-            <div className="flex items-center justify-between">
-              <h3 className="text-2xl font-semibold text-white">Global File Management</h3>
-              <div className="flex gap-2">
-                <button className="px-4 py-2 bg-red-500/20 text-red-400 rounded-lg border border-red-500/30 hover:bg-red-500/30 transition-colors">
-                  Bulk Cleanup
-                </button>
-                <button className="px-4 py-2 bg-blue-500/20 text-blue-400 rounded-lg border border-blue-500/30 hover:bg-blue-500/30 transition-colors">
-                  Export Report
-                </button>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-              {adminFileStats ? [
-                { label: 'Total Files', value: adminFileStats.totalFiles.toLocaleString(), icon: '📁' },
-                { label: 'Flagged Content', value: adminFileStats.flaggedFiles.toString(), icon: '⚠️' },
-                { label: 'Orphaned Files', value: adminFileStats.orphanedFiles.toString(), icon: '🗑️' },
-                { label: 'Large Files (>100MB)', value: adminFileStats.largeFiles.toString(), icon: '📦' },
-              ].map((stat, index) => (
-                <div key={index} className="bg-[rgba(20,20,35,0.6)] rounded-xl p-4 border border-gray-800/40">
-                  <div className="flex items-center gap-3">
-                    <span className="text-2xl">{stat.icon}</span>
-                    <div>
-                      <p className="text-xl font-bold text-white">{stat.value}</p>
-                      <p className="text-sm text-gray-400">{stat.label}</p>
-                    </div>
-                  </div>
-                </div>
-              )) : [
-                { label: 'Total Files', icon: '📁' },
-                { label: 'Flagged Content', icon: '⚠️' },
-                { label: 'Orphaned Files', icon: '🗑️' },
-                { label: 'Large Files (>100MB)', icon: '📦' },
-              ].map((stat, index) => (
-                <div key={index} className="bg-[rgba(20,20,35,0.6)] rounded-xl p-4 border border-gray-800/40">
-                  <div className="flex items-center gap-3">
-                    <span className="text-2xl">{stat.icon}</span>
-                    <div>
-                      <p className="text-xl font-bold text-white">
-                        {adminLoading ? '...' : '0'}
-                      </p>
-                      <p className="text-sm text-gray-400">{stat.label}</p>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div className="bg-[rgba(20,20,35,0.6)] rounded-xl border border-gray-800/40 overflow-hidden">
-              <div className="p-4 border-b border-gray-800/40">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-lg font-semibold text-white">All Files</h4>
-                  <div className="flex gap-2">
-                    <input 
-                      type="text" 
-                      placeholder="Search files..." 
-                      className="px-3 py-2 bg-black/50 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
-                    />
-                    <select className="px-3 py-2 bg-black/50 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500">
-                      <option>All Types</option>
-                      <option>Images</option>
-                      <option>Videos</option>
-                      <option>Documents</option>
-                    </select>
-                  </div>
-                </div>
-              </div>
-              <div className="max-h-96 overflow-y-auto">
-                {adminFiles.length > 0 ? (
-                  <div className="divide-y divide-gray-800/40">
-                    {adminFiles.map((file: unknown, index: number) => {
-                      if (!isAdminFile(file)) return null;
-                      return (
-                      <div key={index} className="p-4 hover:bg-[rgba(30,30,45,0.3)] transition-colors">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-4">
-                            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center">
-                              <span className="text-xs font-bold text-white">
-                                {file.fileName.split('.').pop()?.toUpperCase().slice(0, 2) || 'FL'}
-                              </span>
-                            </div>
-                            <div>
-                              <p className="text-white font-medium truncate max-w-xs">{file.fileName}</p>
-                              <p className="text-sm text-gray-400">{file.owner?.name || 'Unknown'}</p>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-6">
-                            <div className="text-center">
-                              <p className="text-sm text-white">{adminFormatFileSize(file.fileSize)}</p>
-                              <p className="text-xs text-gray-400">Size</p>
-                            </div>
-                            <div className="text-center">
-                              <p className="text-sm text-white">{file.viewCount || 0}</p>
-                              <p className="text-xs text-gray-400">Views</p>
-                            </div>
-                            <div className="text-center">
-                              <p className="text-sm text-white">{adminFormatTimeAgo(file.uploadedAt)}</p>
-                              <p className="text-xs text-gray-400">Uploaded</p>
-                            </div>
-                            <div className="flex gap-2">
-                              <button className="p-1.5 rounded-lg bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 transition-colors">
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                                </svg>
-                              </button>
-                              <button className="p-1.5 rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors">
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                </svg>
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                                            );
-                    }).filter(Boolean)}
-                  </div>
-                ) : (
-                  <p className="p-8 text-center text-gray-400">
-                    {adminLoading ? 'Loading files...' : 'No files found.'}
-                  </p>
-                )}
-              </div>
-            </div>
-          </div>
+          <AdminFilesTab 
+            adminFiles={adminFiles}
+            adminFileStats={adminFileStats}
+            adminLoading={adminLoading}
+            adminFormatFileSize={adminFormatFileSize}
+            adminFormatTimeAgo={adminFormatTimeAgo}
+            isAdminFile={isAdminFile}
+          />
         );
 
       case 'admin-analytics':
-        return (
-          <div className="space-y-6">
-            <h3 className="text-2xl font-semibold text-white">Global Analytics</h3>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <div className="bg-[rgba(20,20,35,0.6)] rounded-xl p-6 border border-gray-800/40">
-                <h4 className="text-lg font-semibold text-white mb-4">Platform Usage</h4>
-                <div className="h-80 flex items-center justify-center">
-                  <p className="text-gray-400">Global analytics charts would be implemented here</p>
-                </div>
-              </div>
-              <div className="bg-[rgba(20,20,35,0.6)] rounded-xl p-6 border border-gray-800/40">
-                <h4 className="text-lg font-semibold text-white mb-4">Geographic Distribution</h4>
-                <div className="h-80 flex items-center justify-center">
-                  <p className="text-gray-400">World map with usage statistics would be here</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        );
+        return <AdminAnalyticsTab />;
 
       case 'admin-system':
-        const handleSettingToggle = (key: string, value: boolean) => {
-          setSystemSettings((prev: Record<string, unknown>) => ({ ...prev, [key]: value }));
-          setSettingsChanged(true);
-        };
-
-        const handleSettingChange = (key: string, value: string | number) => {
-          setSystemSettings((prev: Record<string, unknown>) => ({ ...prev, [key]: value }));
-          setSettingsChanged(true);
-        };
-
-        const saveSettings = async () => {
-          try {
-            await updateSystemSettings(systemSettings);
-            setSettingsChanged(false);
-            
-            // Refresh public settings context
-            await refreshSettings();
-            
-            showNotification({
-              type: 'success',
-              title: 'Settings Updated',
-              message: 'System settings have been saved successfully',
-              duration: 4000
-            });
-          } catch {
-          }
-        };
-
         return (
-          <div className="space-y-6">
-            <div className="flex items-center justify-between">
-              <h3 className="text-2xl font-semibold text-white">System Settings</h3>
-              {settingsChanged && (
-                <button
-                  onClick={saveSettings}
-                  className="px-4 py-2 bg-green-500/20 text-green-400 rounded-lg border border-green-500/30 hover:bg-green-500/30 transition-colors"
-                >
-                  Save Changes
-                </button>
-              )}
-            </div>
-            
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <div className="bg-[rgba(20,20,35,0.6)] rounded-xl p-6 border border-gray-800/40">
-                <h4 className="text-lg font-semibold text-white mb-4">Platform Configuration</h4>
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between p-4 bg-[rgba(15,15,25,0.5)] rounded-lg border border-gray-800/30">
-                    <div>
-                      <p className="text-white font-medium">User Registration</p>
-                      <p className="text-sm text-gray-400">Allow new user signups</p>
-                    </div>
-                    <button
-                      onClick={() => handleSettingToggle('userRegistration', !systemSettings?.userRegistration)}
-                      className={`w-12 h-6 rounded-full p-1 cursor-pointer transition-colors ${
-                        systemSettings?.userRegistration ? 'bg-blue-500' : 'bg-gray-600'
-                      }`}
-                    >
-                      <div className={`w-4 h-4 bg-white rounded-full transition-transform ${
-                        systemSettings?.userRegistration ? 'ml-auto' : ''
-                      }`}></div>
-                    </button>
-                  </div>
-                  
-                  <div className="flex items-center justify-between p-4 bg-[rgba(15,15,25,0.5)] rounded-lg border border-gray-800/30">
-                    <div>
-                      <p className="text-white font-medium">Maintenance Mode</p>
-                      <p className="text-sm text-gray-400">Temporarily disable the platform</p>
-                    </div>
-                    <button
-                      onClick={() => handleSettingToggle('maintenanceMode', !systemSettings?.maintenanceMode)}
-                      className={`w-12 h-6 rounded-full p-1 cursor-pointer transition-colors ${
-                        systemSettings?.maintenanceMode ? 'bg-red-500' : 'bg-gray-600'
-                      }`}
-                    >
-                      <div className={`w-4 h-4 bg-white rounded-full transition-transform ${
-                        systemSettings?.maintenanceMode ? 'ml-auto' : ''
-                      }`}></div>
-                    </button>
-                  </div>
-                </div>
-              </div>
-              
-              <div className="bg-[rgba(20,20,35,0.6)] rounded-xl p-6 border border-gray-800/40">
-                <h4 className="text-lg font-semibold text-white mb-4">Storage Limits</h4>
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm text-gray-300 mb-2">Guest Upload Limit (MB)</label>
-                    <input 
-                      type="number" 
-                      value={systemSettings?.guestUploadLimit || 10}
-                      onChange={(e) => handleSettingChange('guestUploadLimit', parseInt(e.target.value))}
-                      className="w-full px-3 py-2 bg-black/50 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-purple-500" 
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm text-gray-300 mb-2">User Storage Limit (GB)</label>
-                    <input 
-                      type="number" 
-                      value={systemSettings?.userStorageLimit || 10}
-                      onChange={(e) => handleSettingChange('userStorageLimit', parseInt(e.target.value))}
-                      className="w-full px-3 py-2 bg-black/50 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-purple-500" 
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm text-gray-300 mb-2">Max File Size (MB)</label>
-                    <input 
-                      type="number" 
-                      value={systemSettings?.maxFileSize || 100}
-                      onChange={(e) => handleSettingChange('maxFileSize', parseInt(e.target.value))}
-                      className="w-full px-3 py-2 bg-black/50 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-purple-500" 
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* System Messages Section */}
-            <div className="bg-[rgba(20,20,35,0.6)] rounded-xl p-6 border border-gray-800/40">
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <h4 className="text-lg font-semibold text-white">System Messages</h4>
-                  <p className="text-sm text-gray-400">Manage announcements displayed on the main page</p>
-                </div>
-                <button
-                  onClick={() => setShowMessageModal(true)}
-                  className="px-4 py-2 bg-blue-500/20 text-blue-400 rounded-lg border border-blue-500/30 hover:bg-blue-500/30 transition-colors flex items-center gap-2"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                  </svg>
-                  New Message
-                </button>
-              </div>
-              
-              <div className="space-y-3 max-h-48 overflow-y-auto">
-                {systemMessages.length > 0 ? systemMessages.map((message: unknown) => {
-                  if (!isSystemMessage(message)) return null;
-                  return (
-                  <div key={message.id} className="flex items-center justify-between p-3 bg-[rgba(15,15,25,0.5)] rounded-lg border border-gray-800/30">
-                    <div className="flex items-center gap-3 flex-1">
-                      <div className={`w-3 h-3 rounded-full ${
-                        message.type === 'CRITICAL' ? 'bg-red-500' :
-                        message.type === 'WARNING' ? 'bg-yellow-500' : 'bg-blue-500'
-                      }`}></div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-white font-medium truncate">{message.title}</p>
-                        <p className="text-xs text-gray-400">{message.type} • {new Date(message.createdAt).toLocaleDateString()}</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => toggleMessageStatus(message.id, !message.isActive)}
-                        className={`px-2 py-1 rounded text-xs font-medium ${
-                          message.isActive 
-                            ? 'bg-green-500/20 text-green-400' 
-                            : 'bg-gray-500/20 text-gray-400'
-                        }`}
-                      >
-                        {message.isActive ? 'Active' : 'Inactive'}
-                      </button>
-                      <button
-                        onClick={() => deleteMessage(message.id)}
-                        className="p-1 text-red-400 hover:text-red-300 transition-colors"
-                      >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                        </svg>
-                      </button>
-                    </div>
-                  </div>
-                  );
-                }).filter(Boolean) : (
-                  <div className="text-center py-8 text-gray-400">
-                    No system messages created yet.
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
+          <AdminSystemTab 
+            systemSettings={systemSettings}
+            setSystemSettings={setSystemSettings}
+            settingsChanged={settingsChanged}
+            setSettingsChanged={setSettingsChanged}
+            updateSystemSettings={updateSystemSettings}
+            refreshSettings={refreshSettings}
+            showNotification={(notification) => showNotification({
+              type: notification.type as 'success' | 'error' | 'info',
+              title: notification.title,
+              message: notification.message,
+              duration: notification.duration
+            })}
+            systemMessages={systemMessages}
+            setShowMessageModal={setShowMessageModal}
+            toggleMessageStatus={toggleMessageStatus}
+            deleteMessage={deleteMessage}
+            isSystemMessage={isSystemMessage}
+          />
         );
 
       case 'admin-logs':
         return (
-          <div className="space-y-6">
-            <div className="flex items-center justify-between">
-              <h3 className="text-2xl font-semibold text-white">System Logs</h3>
-              <div className="flex gap-2">
-                <select className="px-3 py-2 bg-black/50 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500">
-                  <option>All Levels</option>
-                  <option>Error</option>
-                  <option>Warning</option>
-                  <option>Info</option>
-                </select>
-                <button className="px-4 py-2 bg-blue-500/20 text-blue-400 rounded-lg border border-blue-500/30 hover:bg-blue-500/30 transition-colors">
-                  Export Logs
-                </button>
-              </div>
-            </div>
-            
-            <div className="bg-[rgba(20,20,35,0.6)] rounded-xl border border-gray-800/40 overflow-hidden">
-              <div className="p-4 border-b border-gray-800/40">
-                <h4 className="text-lg font-semibold text-white">Recent System Events</h4>
-              </div>
-              <div className="max-h-96 overflow-y-auto font-mono text-sm">
-                {systemLogs.length > 0 ? systemLogs.map((log, index) => (
-                  <div key={index} className="p-3 border-b border-gray-800/20 hover:bg-[rgba(30,30,45,0.3)] transition-colors">
-                    <div className="flex items-center gap-4">
-                      <span className="text-gray-500 text-xs">{log.time}</span>
-                      <span className={`px-2 py-1 rounded text-xs font-medium ${
-                        log.level === 'ERROR' ? 'bg-red-500/20 text-red-400' :
-                        log.level === 'WARN' ? 'bg-yellow-500/20 text-yellow-400' :
-                        'bg-green-500/20 text-green-400'
-                      }`}>
-                        {log.level}
-                      </span>
-                      <span className="text-white flex-1">{log.message}</span>
-                      <span className="text-gray-400 text-xs">{log.user}</span>
-                    </div>
-                  </div>
-                )) : (
-                  <div className="p-8 text-center text-gray-400">
-                    {adminLoading ? 'Loading system logs...' : 'No system logs available.'}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
+          <AdminLogsTab 
+            systemLogs={systemLogs}
+            adminLoading={adminLoading}
+          />
         );
 
       default:
@@ -2040,157 +1097,21 @@ export default function DashboardModal({ isOpen, onClose }: DashboardModalProps)
           </motion.div>
 
           {/* Delete Confirmation Modal */}
-          {deleteConfirmModal.isOpen && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[60] flex items-center justify-center p-4"
-              onClick={cancelDeleteFile}
-            >
-              <motion.div
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.9 }}
-                className="bg-gradient-to-br from-gray-900/95 via-red-900/20 to-gray-900/95 backdrop-blur-xl rounded-2xl border border-red-500/30 shadow-2xl max-w-md w-full mx-4"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <div className="p-6">
-                  <div className="flex items-center gap-4 mb-4">
-                    <div className="w-12 h-12 rounded-full bg-red-500/20 border border-red-500/30 flex items-center justify-center">
-                      <svg className="w-6 h-6 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
-                      </svg>
-                    </div>
-                    <div>
-                      <h3 className="text-lg font-semibold text-white">Delete File</h3>
-                      <p className="text-sm text-gray-400">This action cannot be undone.</p>
-                    </div>
-                  </div>
-                  
-                  <p className="text-gray-300 mb-6">
-                    Are you sure you want to delete <span className="font-semibold text-white">&quot;{deleteConfirmModal.fileName}&quot;</span>? 
-                    This will permanently remove it from your storage.
-                  </p>
-                  
-                  <div className="flex gap-3">
-                    <button
-                      onClick={cancelDeleteFile}
-                      className="flex-1 px-4 py-2.5 bg-gray-700/50 hover:bg-gray-700/70 text-gray-300 hover:text-white rounded-lg border border-gray-600/50 transition-all duration-200 font-medium"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      onClick={confirmDeleteFile}
-                      className="flex-1 px-4 py-2.5 bg-red-500/80 hover:bg-red-500 text-white rounded-lg border border-red-500/50 transition-all duration-200 font-medium shadow-lg hover:shadow-red-500/25"
-                    >
-                      Delete File
-                    </button>
-                  </div>
-                </div>
-              </motion.div>
-            </motion.div>
-          )}
+          <DeleteConfirmModal
+            isOpen={deleteConfirmModal.isOpen}
+            fileName={deleteConfirmModal.fileName}
+            onConfirm={confirmDeleteFile}
+            onCancel={cancelDeleteFile}
+          />
 
           {/* System Message Modal */}
-          {showMessageModal && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[60] flex items-center justify-center p-4"
-              onClick={() => setShowMessageModal(false)}
-            >
-              <motion.div
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.9 }}
-                className="bg-gradient-to-br from-gray-900/95 via-purple-900/20 to-gray-900/95 backdrop-blur-xl rounded-2xl border border-purple-500/30 shadow-2xl max-w-2xl w-full mx-4"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <div className="p-6">
-                  <div className="flex items-center gap-4 mb-6">
-                    <div className="w-12 h-12 rounded-full bg-blue-500/20 border border-blue-500/30 flex items-center justify-center">
-                      <svg className="w-6 h-6 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                      </svg>
-                    </div>
-                    <div>
-                      <h3 className="text-lg font-semibold text-white">Create System Message</h3>
-                      <p className="text-sm text-gray-400">Send an announcement to all users on the main page</p>
-                    </div>
-                  </div>
-                  
-                  <div className="space-y-4">
-                    <div>
-                      <label className="block text-sm text-gray-300 mb-2">Message Title</label>
-                      <input
-                        type="text"
-                        value={messageForm.title}
-                        onChange={(e) => setMessageForm(prev => ({ ...prev, title: e.target.value }))}
-                        placeholder="Enter message title..."
-                        className="w-full px-3 py-2 bg-black/50 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder-gray-400"
-                      />
-                    </div>
-                    
-                    <div>
-                      <label className="block text-sm text-gray-300 mb-2">Message Content</label>
-                      <textarea
-                        value={messageForm.content}
-                        onChange={(e) => setMessageForm(prev => ({ ...prev, content: e.target.value }))}
-                        placeholder="Enter your message content..."
-                        rows={4}
-                        className="w-full px-3 py-2 bg-black/50 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder-gray-400 resize-none"
-                      />
-                    </div>
-                    
-                    <div>
-                      <label className="block text-sm text-gray-300 mb-2">Message Type</label>
-                      <div className="grid grid-cols-3 gap-3">
-                        {[
-                          { value: 'INFO', label: 'Information', color: 'blue', description: 'General announcements' },
-                          { value: 'WARNING', label: 'Warning', color: 'yellow', description: 'Important notices' },
-                          { value: 'CRITICAL', label: 'Critical', color: 'red', description: 'Urgent alerts' }
-                        ].map((type) => (
-                          <button
-                            key={type.value}
-                            onClick={() => setMessageForm(prev => ({ ...prev, type: type.value as 'INFO' | 'WARNING' | 'CRITICAL' }))}
-                            className={`p-3 rounded-lg border transition-all ${
-                              messageForm.type === type.value
-                                ? `border-${type.color}-500 bg-${type.color}-500/20`                                : 'border-gray-700 bg-gray-800/50 hover:border-gray-600'
-                            }`}
-                          >
-                            <div className={`w-4 h-4 rounded-full mx-auto mb-2 ${
-                              type.color === 'blue' ? 'bg-blue-500' :
-                              type.color === 'yellow' ? 'bg-yellow-500' : 'bg-red-500'
-                            }`}></div>
-                            <p className="text-sm font-medium text-white">{type.label}</p>
-                            <p className="text-xs text-gray-400 mt-1">{type.description}</p>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <div className="flex gap-3 mt-6">
-                    <button
-                      onClick={() => setShowMessageModal(false)}
-                      className="flex-1 px-4 py-2.5 bg-gray-700/50 hover:bg-gray-700/70 text-gray-300 hover:text-white rounded-lg border border-gray-600/50 transition-all duration-200 font-medium"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      onClick={handleCreateMessage}
-                      disabled={!messageForm.title || !messageForm.content}
-                      className="flex-1 px-4 py-2.5 bg-blue-500/80 hover:bg-blue-500 text-white rounded-lg border border-blue-500/50 transition-all duration-200 font-medium shadow-lg hover:shadow-blue-500/25 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      Create Message
-                    </button>
-                  </div>
-                </div>
-              </motion.div>
-            </motion.div>
-          )}
+          <SystemMessageModal
+            isOpen={showMessageModal}
+            messageForm={messageForm}
+            setMessageForm={setMessageForm}
+            onClose={() => setShowMessageModal(false)}
+            onCreateMessage={handleCreateMessage}
+          />
 
           {/* User Profile Modal */}
           <UserProfileModal

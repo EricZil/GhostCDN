@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 
-interface DashboardStats {
+export interface DashboardStats {
   totalUploads: number;
   uploadsGrowth: string;
   storageUsed: number;
@@ -14,7 +14,7 @@ interface DashboardStats {
   recentActivity: Activity[];
 }
 
-interface Upload {
+export interface Upload {
   id: string;
   fileName: string;
   fileKey: string;
@@ -32,14 +32,14 @@ interface Upload {
   } | null;
 }
 
-interface Activity {
+export interface Activity {
   type: string;
   message: string;
   createdAt: string;
   metadata?: Record<string, unknown>;
 }
 
-interface Analytics {
+export interface Analytics {
   viewsOverTime: Record<string, unknown>[];
   topFiles: Array<{
     fileName: string;
@@ -54,13 +54,20 @@ interface Analytics {
   peakTrafficHour: string;
 }
 
-interface StorageInfo {
+export interface StorageInfo {
   totalFiles: number;
   totalSize: number;
   storageLimit: number;
   storagePercentage: number;
-  storageByType: Record<string, unknown>[];
+  storageByType: Array<{
+    type: string;
+    size: number;
+    count: number;
+    percentage: string;
+  }>;
   available: number;
+  weeklyGrowthRate?: number;
+  timestamp?: string;
 }
 
 export function useDashboard() {
@@ -195,8 +202,11 @@ export function useDashboard() {
       const response = await callDashboardAPI('storage');
       if (response.success) {
         setStorageInfo(response.data);
+      } else {
+        setError(response.message || 'Failed to fetch storage info');
       }
     } catch (err) {
+      console.error('fetchStorage error:', err);
       setError(err instanceof Error ? err.message : 'Failed to fetch storage info');
     } finally {
       setLoading(false);

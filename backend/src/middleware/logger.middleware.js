@@ -58,31 +58,25 @@ if (process.env.NODE_ENV === 'production') {
 // Request logging middleware
 const requestLogger = expressWinston.logger({
   winstonInstance: logger,
-  meta: true,
-  msg: "HTTP {{req.method}} {{req.url}}",
-  expressFormat: true,
+  meta: false, // Disable verbose metadata
+  msg: "{{req.method}} {{req.url}} {{res.statusCode}} {{res.responseTime}}ms",
+  expressFormat: false,
   colorize: false,
   ignoreRoute: function (req, res) {
     // Don't log health check requests to reduce noise
-    return req.url === '/health';
+    return req.url === '/health' || req.url === '/api/health';
   },
-  requestWhitelist: [
-    'url', 'headers', 'method', 'httpVersion', 'originalUrl', 'query'
-  ],
-  responseWhitelist: [
-    'statusCode', 'responseTime'
-  ],
+  requestWhitelist: [],
+  responseWhitelist: [],
   headerBlacklist: [
     'authorization', 'x-api-key', 'cookie'
   ],
   dynamicMeta: (req, res) => {
+    // Only include essential info for cleaner logs
+    const userEmail = req.params?.userEmail || (req.user ? req.user.email : null);
     return {
-      ip: req.ip || req.connection.remoteAddress,
-      userAgent: req.get('user-agent'),
-      userId: req.user ? req.user.id : null,
-      userEmail: req.user ? req.user.email : null,
-      apiEndpoint: req.route ? req.route.path : req.url,
-      timestamp: new Date().toISOString()
+      endpoint: req.route ? req.route.path : req.url,
+      user: userEmail || 'anonymous'
     };
   }
 });
@@ -297,4 +291,4 @@ module.exports = {
   apiRequestLogger,
   databaseErrorLogger,
   seedTestLogs
-}; 
+};

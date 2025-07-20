@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Image from 'next/image';
 import { useDashboard } from '@/hooks/useDashboard';
@@ -41,11 +41,7 @@ export default function DuplicateDetection({ onClose }: DuplicateDetectionProps)
   const { fetchDuplicates, bulkDeleteFiles, formatFileSize, formatTimeAgo } = useDashboard();
   const { showNotification } = useNotification();
 
-  useEffect(() => {
-    loadDuplicates();
-  }, []);
-
-  const loadDuplicates = async () => {
+  const loadDuplicates = useCallback(async () => {
     if (!user?.email) return;
     
     setLoading(true);
@@ -62,7 +58,11 @@ export default function DuplicateDetection({ onClose }: DuplicateDetectionProps)
     } finally {
       setLoading(false);
     }
-  };
+  }, [user?.email, fetchDuplicates, showNotification]);
+
+  useEffect(() => {
+    loadDuplicates();
+  }, [loadDuplicates]);
 
   const handleFileSelect = (fileId: string, isSelected: boolean) => {
     if (isSelected) {

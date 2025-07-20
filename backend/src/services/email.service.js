@@ -22,7 +22,11 @@ class EmailService {
   async verifyConnection() {
     try {
       await this.transporter.verify();
-      console.log('✅ Maileroo SMTP connection verified');
+      // Only log SMTP verification once per application startup
+      if (!global.smtpVerified) {
+        console.log('✅ Maileroo SMTP connection verified');
+        global.smtpVerified = true;
+      }
     } catch (error) {
       console.error('❌ Maileroo SMTP connection failed:', error.message);
       console.warn('⚠️  Email functionality will be disabled');
@@ -426,4 +430,20 @@ The GhostCDN Team
   }
 }
 
-module.exports = new EmailService();
+// Create singleton instance - only create once
+let emailServiceInstance = null;
+
+function getEmailServiceInstance() {
+  if (!emailServiceInstance) {
+    emailServiceInstance = new EmailService();
+  }
+  return emailServiceInstance;
+}
+
+module.exports = {
+  get sendVerificationEmail() { return getEmailServiceInstance().sendVerificationEmail.bind(getEmailServiceInstance()); },
+  get sendPasswordResetEmail() { return getEmailServiceInstance().sendPasswordResetEmail.bind(getEmailServiceInstance()); },
+  get sendWelcomeEmail() { return getEmailServiceInstance().sendWelcomeEmail.bind(getEmailServiceInstance()); },
+  get verifyConnection() { return getEmailServiceInstance().verifyConnection.bind(getEmailServiceInstance()); },
+  get logEmailActivity() { return getEmailServiceInstance().logEmailActivity.bind(getEmailServiceInstance()); }
+};

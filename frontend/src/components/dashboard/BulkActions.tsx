@@ -46,7 +46,6 @@ export default function BulkActions({
   const { showNotification } = useNotification();
 
   const isAllSelected = selectedFiles.length === totalFiles && totalFiles > 0;
-  const isSomeSelected = selectedFiles.length > 0;
 
   const handleBulkDelete = async () => {
     if (selectedFiles.length === 0) return;
@@ -75,18 +74,9 @@ export default function BulkActions({
     }
   };
 
-  if (!isSomeSelected) {
-    return null;
-  }
-
   return (
     <>
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: 20 }}
-        className="bg-gradient-to-r from-purple-600/20 to-pink-600/20 border border-purple-500/30 rounded-xl p-4 backdrop-blur-sm"
-      >
+      <div className="bg-gradient-to-r from-purple-600/20 to-pink-600/20 border border-purple-500/30 rounded-xl p-4 backdrop-blur-sm">
         <div className="flex items-center justify-between">
           {/* Selection Info */}
           <div className="flex items-center gap-4">
@@ -195,7 +185,7 @@ export default function BulkActions({
             </button>
           </div>
         </div>
-      </motion.div>
+      </div>
 
       {/* Delete Confirmation Modal */}
       <AnimatePresence>
