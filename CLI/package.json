@@ -1,0 +1,54 @@
+{
+  "name": "ghostcdn-cli",
+  "version": "1.0.0",
+  "description": "Simple CLI tool for uploading files to GhostCDN - Use web dashboard for file management",
+  "main": "src/index.js",
+  "bin": {
+    "ghostcdn": "./src/index.js"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js",
+    "build": "pkg . --out-path=dist",
+    "build:win": "pkg . --targets=node18-win-x64 --out-path=dist",
+    "build:mac": "pkg . --targets=node18-macos-x64 --out-path=dist",
+    "build:linux": "pkg . --targets=node18-linux-x64 --out-path=dist",
+    "build:all": "npm run build:win && npm run build:mac && npm run build:linux"
+  },
+  "keywords": [
+    "cli",
+    "upload",
+    "cdn",
+    "ghostcdn",
+    "file-upload"
+  ],
+  "author": "GhostCDN Team",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.6.2",
+    "chalk": "^4.1.2",
+    "clipboardy": "^2.3.0",
+    "figlet": "^1.7.0",
+    "form-data": "^4.0.0",
+    "inquirer": "^8.2.6",
+    "mime-types": "^2.1.35",
+    "open": "^8.4.2",
+    "ora": "^5.4.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2",
+    "pkg": "^5.8.1"
+  },
+  "pkg": {
+    "scripts": [
+      "src/**/*.js"
+    ],
+    "assets": [
+      "node_modules/figlet/fonts/*.flf"
+    ],
+    "outputPath": "dist"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  }
+}

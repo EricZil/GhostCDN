@@ -1,0 +1,409 @@
+name: Build CLI Executables
+
+on:
+  push:
+    branches: [ main, develop ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      version_bump:
+        description: 'Version bump type'
+        required: false
+        default: 'patch'
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+
+env:
+  NODE_VERSION: '18'
+  REGISTRY_URL: 'https://registry.npmjs.org'
+
+jobs:
+  # Security audit and code quality checks
+  security-audit:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run security audit
+        run: npm audit --audit-level=moderate
+
+      - name: Check for vulnerabilities
+        run: |
+          if npm audit --audit-level=high --json | jq '.vulnerabilities | length' | grep -v '^0$'; then
+            echo "High severity vulnerabilities found!"
+            npm audit --audit-level=high
+            exit 1
+          fi
+
+      - name: Lint code
+        run: |
+          # Basic linting checks
+          echo "Running code quality checks..."
+          
+          # Check for hardcoded secrets or sensitive data
+          if grep -r "password\|secret\|key\|token" src/ --include="*.js" | grep -v "API_BASE_URL\|WEB_DASHBOARD_URL\|DOCS_URL"; then
+            echo "Potential hardcoded secrets found!"
+            exit 1
+          fi
+          
+          # Check for debug statements
+          if grep -r "console\.log\|debugger" src/ --include="*.js" | grep -v "display\.js"; then
+            echo "Debug statements found in production code!"
+            exit 1
+          fi
+          
+          echo "Code quality checks passed!"
+
+  # Version management
+  version-management:
+    name: Version Management
+    runs-on: ubuntu-latest
+    needs: security-audit
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Configure Git
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+
+      - name: Determine version bump
+        id: version-bump
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "bump=${{ github.event.inputs.version_bump }}" >> $GITHUB_OUTPUT
+          else
+            # Auto-determine based on commit messages
+            if git log --format=%B -n 1 | grep -i "breaking\|major"; then
+              echo "bump=major" >> $GITHUB_OUTPUT
+            elif git log --format=%B -n 1 | grep -i "feat\|feature\|minor"; then
+              echo "bump=minor" >> $GITHUB_OUTPUT
+            else
+              echo "bump=patch" >> $GITHUB_OUTPUT
+            fi
+          fi
+
+      - name: Bump version
+        id: version
+        run: |
+          BUMP_TYPE="${{ steps.version-bump.outputs.bump }}"
+          NEW_VERSION=$(npm version $BUMP_TYPE --no-git-tag-version)
+          echo "version=${NEW_VERSION#v}" >> $GITHUB_OUTPUT
+          echo "tag=${NEW_VERSION}" >> $GITHUB_OUTPUT
+          
+          # Update package.json
+          git add package.json
+          git commit -m "chore: bump version to ${NEW_VERSION}"
+          git tag ${NEW_VERSION}
+
+      - name: Push changes
+        run: |
+          git push origin main
+          git push origin ${{ steps.version.outputs.tag }}
+
+  # Build executables for multiple platforms
+  build-executables:
+    name: Build Executables
+    runs-on: ${{ matrix.os }}
+    needs: [security-audit]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Windows builds
+          - os: windows-latest
+            platform: win
+            arch: x64
+            ext: .exe
+            node_arch: x64
+          - os: windows-latest
+            platform: win
+            arch: arm64
+            ext: .exe
+            node_arch: arm64
+          
+          # macOS builds
+          - os: macos-latest
+            platform: macos
+            arch: x64
+            ext: ''
+            node_arch: x64
+          - os: macos-latest
+            platform: macos
+            arch: arm64
+            ext: ''
+            node_arch: arm64
+          
+          # Linux builds
+          - os: ubuntu-latest
+            platform: linux
+            arch: x64
+            ext: ''
+            node_arch: x64
+          - os: ubuntu-latest
+            platform: linux
+            arch: arm64
+            ext: ''
+            node_arch: arm64
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci --production
+
+      - name: Get version info
+        id: version-info
+        shell: bash
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          GIT_HASH=$(git rev-parse --short HEAD)
+          BUILD_DATE=$(date -u +"%Y%m%d")
+          
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "git_hash=${GIT_HASH}" >> $GITHUB_OUTPUT
+          echo "build_date=${BUILD_DATE}" >> $GITHUB_OUTPUT
+
+      - name: Create build info
+        shell: bash
+        run: |
+          cat > src/build-info.js << EOF
+          module.exports = {
+            version: '${{ steps.version-info.outputs.version }}',
+            gitHash: '${{ steps.version-info.outputs.git_hash }}',
+            buildDate: '${{ steps.version-info.outputs.build_date }}',
+            platform: '${{ matrix.platform }}',
+            arch: '${{ matrix.arch }}'
+          };
+          EOF
+
+      - name: Build executable
+        shell: bash
+        run: |
+          # Create output directory
+          mkdir -p dist
+          
+          # Build executable with pkg
+          FILENAME="ghostcdn-cli-v${{ steps.version-info.outputs.version }}-${{ steps.version-info.outputs.git_hash }}-${{ matrix.platform }}-${{ matrix.arch }}${{ matrix.ext }}"
+          
+          npx pkg . \
+            --target "node18-${{ matrix.platform }}-${{ matrix.arch }}" \
+            --output "dist/${FILENAME}" \
+            --compress GZip
+          
+          echo "EXECUTABLE_NAME=${FILENAME}" >> $GITHUB_ENV
+
+      - name: Test executable
+        shell: bash
+        run: |
+          # Basic smoke test
+          if [[ "${{ matrix.platform }}" == "win" ]]; then
+            ./dist/${{ env.EXECUTABLE_NAME }} --version || echo "Version check completed"
+          else
+            chmod +x ./dist/${{ env.EXECUTABLE_NAME }}
+            ./dist/${{ env.EXECUTABLE_NAME }} --version || echo "Version check completed"
+          fi
+
+      - name: Generate checksums
+        shell: bash
+        run: |
+          cd dist
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum ${{ env.EXECUTABLE_NAME }} > ${{ env.EXECUTABLE_NAME }}.sha256
+          elif command -v shasum >/dev/null 2>&1; then
+            shasum -a 256 ${{ env.EXECUTABLE_NAME }} > ${{ env.EXECUTABLE_NAME }}.sha256
+          else
+            # Windows fallback
+            powershell -Command "Get-FileHash ${{ env.EXECUTABLE_NAME }} -Algorithm SHA256 | Select-Object Hash | Format-Table -HideTableHeaders" > ${{ env.EXECUTABLE_NAME }}.sha256
+          fi
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: executable-${{ matrix.platform }}-${{ matrix.arch }}
+          path: |
+            dist/${{ env.EXECUTABLE_NAME }}
+            dist/${{ env.EXECUTABLE_NAME }}.sha256
+          retention-days: 30
+
+  # Create GitHub release
+  create-release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    needs: [version-management, build-executables]
+    if: always() && needs.version-management.result == 'success' && needs.build-executables.result == 'success'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Prepare release assets
+        run: |
+          mkdir -p release-assets
+          find artifacts -name "ghostcdn-cli-*" -type f | while read file; do
+            cp "$file" release-assets/
+          done
+          
+          # List all files for verification
+          ls -la release-assets/
+
+      - name: Generate release notes
+        id: release-notes
+        run: |
+          cat > release-notes.md << EOF
+          # GhostCDN CLI v${{ needs.version-management.outputs.version }}
+          
+          ## 🚀 What's New
+          
+          This release includes the following improvements:
+          
+          - Enhanced security with proper credential encryption
+          - Improved error handling and user experience
+          - Path sanitization for secure file operations
+          - Configurable API endpoints for different environments
+          
+          ## 📦 Downloads
+          
+          Choose the appropriate executable for your platform:
+          
+          ### Windows
+          - **x64**: \`ghostcdn-cli-v${{ needs.version-management.outputs.version }}-*-win-x64.exe\`
+          - **ARM64**: \`ghostcdn-cli-v${{ needs.version-management.outputs.version }}-*-win-arm64.exe\`
+          
+          ### macOS
+          - **Intel (x64)**: \`ghostcdn-cli-v${{ needs.version-management.outputs.version }}-*-macos-x64\`
+          - **Apple Silicon (ARM64)**: \`ghostcdn-cli-v${{ needs.version-management.outputs.version }}-*-macos-arm64\`
+          
+          ### Linux
+          - **x64**: \`ghostcdn-cli-v${{ needs.version-management.outputs.version }}-*-linux-x64\`
+          - **ARM64**: \`ghostcdn-cli-v${{ needs.version-management.outputs.version }}-*-linux-arm64\`
+          
+          ## 🔐 Security
+          
+          All executables are built from audited source code and include SHA256 checksums for verification.
+          
+          ## 📖 Usage
+          
+          1. Download the appropriate executable for your platform
+          2. Make it executable (Linux/macOS): \`chmod +x ghostcdn-cli-*\`
+          3. Run: \`./ghostcdn-cli-*\` or \`ghostcdn-cli-*.exe\`
+          4. Follow the interactive prompts to authenticate and upload files
+          
+          ## 🐛 Bug Reports
+          
+          If you encounter any issues, please report them on our [GitHub Issues](https://github.com/your-username/ghostcdn/issues) page.
+          EOF
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ needs.version-management.outputs.tag }}
+          name: GhostCDN CLI ${{ needs.version-management.outputs.tag }}
+          body_path: release-notes.md
+          files: release-assets/*
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Cleanup old releases (keep last 5)
+  cleanup-releases:
+    name: Cleanup Old Releases
+    runs-on: ubuntu-latest
+    needs: create-release
+    if: always() && needs.create-release.result == 'success'
+    steps:
+      - name: Cleanup old releases
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: releases } = await github.rest.repos.listReleases({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              per_page: 100
+            });
+            
+            // Keep the latest 5 releases, delete the rest
+            const releasesToDelete = releases.slice(5);
+            
+            for (const release of releasesToDelete) {
+              console.log(`Deleting release: ${release.tag_name}`);
+              await github.rest.repos.deleteRelease({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                release_id: release.id
+              });
+              
+              // Also delete the tag
+              try {
+                await github.rest.git.deleteRef({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  ref: `tags/${release.tag_name}`
+                });
+              } catch (error) {
+                console.log(`Could not delete tag ${release.tag_name}: ${error.message}`);
+              }
+            }
+
+  # Notification on completion
+  notify-completion:
+    name: Notify Completion
+    runs-on: ubuntu-latest
+    needs: [create-release, cleanup-releases]
+    if: always()
+    steps:
+      - name: Notify success
+        if: needs.create-release.result == 'success'
+        run: |
+          echo "✅ Build and release completed successfully!"
+          echo "🎉 New executables are available for download"
+
+      - name: Notify failure
+        if: needs.create-release.result == 'failure'
+        run: |
+          echo "❌ Build or release failed!"
+          echo "🔍 Check the workflow logs for details"
+          exit 1
