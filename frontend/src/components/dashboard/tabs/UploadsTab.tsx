@@ -13,6 +13,8 @@ interface Upload {
   fileKey: string;
   uploadedAt: string;
   viewCount: number;
+  uploadSource?: 'web' | 'cli';
+  hasThumbnails?: boolean;
   thumbnails?: {
     small: string;
     medium: string;
@@ -52,6 +54,41 @@ interface UploadsTabProps {
   handlePageChange: (page: number) => void;
   handleItemsPerPageChange: (itemsPerPage: number) => void;
 }
+
+// Helper function to check if a file is an image type
+const isImageFile = (fileType: string): boolean => {
+  return fileType.startsWith('image/');
+};
+
+// Helper function to render upload source badge
+const renderUploadSourceBadge = (uploadSource?: 'web' | 'cli') => {
+  if (uploadSource === 'cli') {
+    return (
+      <span className="px-2 py-0.5 bg-green-500/20 text-green-400 rounded-full text-xs font-medium flex items-center gap-1">
+        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l3 3-3 3m5 0h3" />
+        </svg>
+        CLI Upload
+      </span>
+    );
+  }
+  return null;
+};
+
+// Helper function to render thumbnail badge (only for images with thumbnails)
+const renderThumbnailBadge = (fileType: string, hasThumbnails?: boolean) => {
+  if (isImageFile(fileType) && hasThumbnails) {
+    return (
+      <span className="px-2 py-0.5 bg-purple-500/20 text-purple-400 rounded-full text-xs font-medium flex items-center gap-1">
+        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+        </svg>
+        Thumbs
+      </span>
+    );
+  }
+  return null;
+};
 
 export const UploadsTab: React.FC<UploadsTabProps> = ({
   dashboardStats,
@@ -227,10 +264,10 @@ export const UploadsTab: React.FC<UploadsTabProps> = ({
 
                       {/* Enhanced File Preview */}
                       <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500/20 to-purple-500/20 border border-blue-500/30 flex items-center justify-center overflow-hidden shadow-lg">
-                        {file.thumbnails?.small ? (
+                        {isImageFile(file.fileType) && file.hasThumbnails && file.thumbnails?.small ? (
                           // eslint-disable-next-line @next/next/no-img-element
-                          <img 
-                            src={file.thumbnails.small} 
+                          <img
+                            src={file.thumbnails.small}
                             alt={file.fileName}
                             className="w-full h-full object-cover rounded-lg"
                             onError={(e) => {
@@ -243,7 +280,14 @@ export const UploadsTab: React.FC<UploadsTabProps> = ({
                             }}
                           />
                         ) : (
-                          <span className="text-lg">📷</span>
+                          <span className="text-lg">
+                            {isImageFile(file.fileType) ? '📷' :
+                             file.fileType.startsWith('video/') ? '🎥' :
+                             file.fileType.startsWith('audio/') ? '🎵' :
+                             file.fileType.includes('pdf') ? '📄' :
+                             file.fileType.includes('zip') || file.fileType.includes('archive') ? '📦' :
+                             '📁'}
+                          </span>
                         )}
                       </div>
                       
@@ -251,13 +295,10 @@ export const UploadsTab: React.FC<UploadsTabProps> = ({
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1">
                           <p className="text-sm font-medium text-white truncate">{file.fileName}</p>
-                          {file.thumbnails && (
-                            file.thumbnails.small || file.thumbnails.medium || file.thumbnails.large
-                          ) && (
-                            <span className="px-2 py-0.5 bg-purple-500/20 text-purple-400 rounded-full text-xs font-medium">
-                              Thumbs
-                            </span>
-                          )}
+                          <div className="flex items-center gap-2">
+                            {renderUploadSourceBadge(file.uploadSource)}
+                            {renderThumbnailBadge(file.fileType, file.hasThumbnails)}
+                          </div>
                         </div>
                         <div className="flex items-center gap-3 text-xs text-gray-400">
                           <span className="flex items-center gap-1">
@@ -284,9 +325,9 @@ export const UploadsTab: React.FC<UploadsTabProps> = ({
                     
                     {/* Enhanced Action Buttons */}
                     <div className="flex items-center gap-2">
-                      {/* Thumbnail Toggle Button */}
-                      {file.thumbnails && (file.thumbnails.small || file.thumbnails.medium || file.thumbnails.large) && (
-                        <button 
+                      {/* Thumbnail Toggle Button - Only show for images with thumbnails */}
+                      {isImageFile(file.fileType) && file.hasThumbnails && (
+                        <button
                           onClick={() => toggleFileExpansion(file.id)}
                           className={`group relative px-3 py-2 rounded-xl border transition-all duration-300 transform hover:scale-105 active:scale-95 ${
                             isExpanded
@@ -352,9 +393,9 @@ export const UploadsTab: React.FC<UploadsTabProps> = ({
                   </div>
                 </div>
 
-                {/* Thumbnail Links Expansion - Fixed Layout */}
+                {/* Thumbnail Links Expansion - Only for images with thumbnails */}
                 <AnimatePresence>
-                  {isExpanded && file.thumbnails && (file.thumbnails.small || file.thumbnails.medium || file.thumbnails.large) && (
+                  {isExpanded && isImageFile(file.fileType) && file.hasThumbnails && file.thumbnails && (
                     <motion.div
                       initial={{ opacity: 0, height: 0 }}
                       animate={{ opacity: 1, height: 'auto' }}
@@ -362,7 +403,7 @@ export const UploadsTab: React.FC<UploadsTabProps> = ({
                       className="border-t border-gray-800/40 bg-[rgba(15,15,25,0.5)]"
                     >
                       <div className="p-6">
-                        <ThumbnailLinks 
+                        <ThumbnailLinks
                         thumbnails={file.thumbnails && {
                           small: file.thumbnails.small || '',
                           medium: file.thumbnails.medium || '',

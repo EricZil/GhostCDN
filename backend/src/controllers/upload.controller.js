@@ -82,6 +82,9 @@ class UploadController {
       const sizeUnit = isCliRequest ? 'GB' : 'MB';
       const sizeLimit = isCliRequest ? maxSize / (1024 * 1024 * 1024) : maxSize / (1024 * 1024);
       
+      // Store CLI detection for later use
+      req.isCliUpload = isCliRequest;
+      
       if (fileSize > maxSize) {
         return res.status(400).json({
           success: false,
@@ -191,7 +194,7 @@ class UploadController {
         });
       }
       
-      const result = await storageService.completeDirectUpload(fileKey, true, options, req.user);
+      const result = await storageService.completeDirectUpload(fileKey, true, options, req.user, req.isCliUpload);
       
       return res.status(200).json({
         success: true,

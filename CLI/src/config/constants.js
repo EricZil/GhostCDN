@@ -2,7 +2,7 @@ const path = require('path');
 const os = require('os');
 
 // API Configuration - Use environment variable or default to production
-const API_BASE_URL = process.env.GHOSTCDN_API_URL || 'http://localhost:3001/api/v1';
+const API_BASE_URL = process.env.GHOSTCDN_API_URL || 'https://q1.api.ghostcdn.xyz/api/v1';
 const WEB_DASHBOARD_URL = process.env.GHOSTCDN_WEB_URL || 'https://ghostcdn.xyz';
 const DOCS_URL = process.env.GHOSTCDN_DOCS_URL || 'https://ghostcdn.xyz/docs';
 

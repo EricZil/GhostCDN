@@ -222,28 +222,31 @@ router.get('/uploads/:userEmail', async (req, res) => {
     
     // Transform uploads to include view count and thumbnail URLs
     const uploadsWithViews = uploads.map(upload => {
-      // Generate thumbnail URLs based on file structure
+      // Generate thumbnail URLs based on file structure, but only if hasThumbnails is true
       let thumbnails = null;
       const baseUrl = process.env.DO_SPACES_PUBLIC_URL || 'https://cdn.gcdn.space';
       
-      let thumbnailBasePath;
-      if (upload.fileKey.startsWith('Guests/')) {
-        thumbnailBasePath = 'Guests/Thumbnails/';
-      } else if (upload.fileKey.startsWith('Registered/')) {
-        const pathParts = upload.fileKey.split('/');
-        const userFolder = pathParts[1];
-        thumbnailBasePath = `Registered/${userFolder}/Thumbnails/`;
-      }
-      
-      if (thumbnailBasePath) {
-        const originalFileName = upload.fileKey.split('/').pop();
-        if (originalFileName) {
-          const baseName = originalFileName.substring(0, originalFileName.lastIndexOf('.'));
-          thumbnails = {
-            small: `${baseUrl}/${thumbnailBasePath}${baseName}_small.webp`,
-            medium: `${baseUrl}/${thumbnailBasePath}${baseName}_medium.webp`,
-            large: `${baseUrl}/${thumbnailBasePath}${baseName}_large.webp`
-          };
+      // Only generate thumbnail URLs if the database indicates thumbnails exist
+      if (upload.hasThumbnails) {
+        let thumbnailBasePath;
+        if (upload.fileKey.startsWith('Guests/')) {
+          thumbnailBasePath = 'Guests/Thumbnails/';
+        } else if (upload.fileKey.startsWith('Registered/')) {
+          const pathParts = upload.fileKey.split('/');
+          const userFolder = pathParts[1];
+          thumbnailBasePath = `Registered/${userFolder}/Thumbnails/`;
+        }
+        
+        if (thumbnailBasePath) {
+          const originalFileName = upload.fileKey.split('/').pop();
+          if (originalFileName) {
+            const baseName = originalFileName.substring(0, originalFileName.lastIndexOf('.'));
+            thumbnails = {
+              small: `${baseUrl}/${thumbnailBasePath}${baseName}_small.webp`,
+              medium: `${baseUrl}/${thumbnailBasePath}${baseName}_medium.webp`,
+              large: `${baseUrl}/${thumbnailBasePath}${baseName}_large.webp`
+            };
+          }
         }
       }
       
@@ -1136,28 +1139,31 @@ router.get('/duplicates/:userEmail', async (req, res) => {
         const filesWithDetails = files.map(file => {
           const baseUrl = process.env.DO_SPACES_PUBLIC_URL || 'https://cdn.gcdn.space';
           let thumbnails = null;
-          
-          let thumbnailBasePath;
-          if (file.fileKey.startsWith('Guests/')) {
-            thumbnailBasePath = 'Guests/Thumbnails/';
-          } else if (file.fileKey.startsWith('Registered/')) {
-            const pathParts = file.fileKey.split('/');
-            const userFolder = pathParts[1];
-            thumbnailBasePath = `Registered/${userFolder}/Thumbnails/`;
-          }
-          
-          if (thumbnailBasePath) {
-            const originalFileName = file.fileKey.split('/').pop();
-            if (originalFileName) {
-              const baseName = originalFileName.substring(0, originalFileName.lastIndexOf('.'));
-              thumbnails = {
-                small: `${baseUrl}/${thumbnailBasePath}${baseName}_small.webp`,
-                medium: `${baseUrl}/${thumbnailBasePath}${baseName}_medium.webp`,
-                large: `${baseUrl}/${thumbnailBasePath}${baseName}_large.webp`
-              };
+
+          // Only generate thumbnail URLs if the database indicates thumbnails exist
+          if (file.hasThumbnails) {
+            let thumbnailBasePath;
+            if (file.fileKey.startsWith('Guests/')) {
+              thumbnailBasePath = 'Guests/Thumbnails/';
+            } else if (file.fileKey.startsWith('Registered/')) {
+              const pathParts = file.fileKey.split('/');
+              const userFolder = pathParts[1];
+              thumbnailBasePath = `Registered/${userFolder}/Thumbnails/`;
+            }
+
+            if (thumbnailBasePath) {
+              const originalFileName = file.fileKey.split('/').pop();
+              if (originalFileName) {
+                const baseName = originalFileName.substring(0, originalFileName.lastIndexOf('.'));
+                thumbnails = {
+                  small: `${baseUrl}/${thumbnailBasePath}${baseName}_small.webp`,
+                  medium: `${baseUrl}/${thumbnailBasePath}${baseName}_medium.webp`,
+                  large: `${baseUrl}/${thumbnailBasePath}${baseName}_large.webp`
+                };
+              }
             }
           }
-          
+
           return {
             ...file,
             viewCount: file._count.analytics,

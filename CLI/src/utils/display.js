@@ -144,10 +144,12 @@ function showBox(message, options = {}) {
 function createProgressBar(total, options = {}) {
   // Enhanced progress implementation for large file uploads
   let current = 0;
+  let isFirstUpdate = true;
   
   return {
     start: (total, value) => {
       current = value || 0;
+      isFirstUpdate = true;
     },
     update: (progress, data = {}) => {
       // Support both old format (value) and new format (progress, data)
@@ -158,7 +160,7 @@ function createProgressBar(total, options = {}) {
         const filledLength = Math.round(progress * barLength);
         const bar = '█'.repeat(filledLength) + '░'.repeat(barLength - filledLength);
         
-        let statusLine = `\r${chalk.cyan(bar)} ${percentage}%`;
+        let statusLine = `${chalk.cyan(bar)} ${percentage}%`;
         
         if (data.filename) {
           statusLine += ` | ${chalk.white(data.filename)}`;
@@ -173,7 +175,13 @@ function createProgressBar(total, options = {}) {
           statusLine += ` | ETA: ${chalk.magenta(data.eta)}`;
         }
         
+        // Use Node.js built-in methods for reliable cursor control
+        if (!isFirstUpdate) {
+          process.stdout.clearLine(0); // Clear the current line
+          process.stdout.cursorTo(0);  // Move cursor to beginning of line
+        }
         process.stdout.write(statusLine);
+        isFirstUpdate = false;
       } else {
         // Old format: progress is current value
         current = progress;
@@ -182,10 +190,23 @@ function createProgressBar(total, options = {}) {
         const filledLength = Math.round((percentage / 100) * barLength);
         const bar = '█'.repeat(filledLength) + '░'.repeat(barLength - filledLength);
         
-        process.stdout.write(`\r${chalk.cyan(bar)} ${percentage}% (${current}/${total})`);
+        const statusLine = `${chalk.cyan(bar)} ${percentage}% (${current}/${total})`;
+        
+        // Use Node.js built-in methods for reliable cursor control
+        if (!isFirstUpdate) {
+          process.stdout.clearLine(0); // Clear the current line
+          process.stdout.cursorTo(0);  // Move cursor to beginning of line
+        }
+        process.stdout.write(statusLine);
+        isFirstUpdate = false;
       }
     },
     stop: () => {
+      // Clear the progress line and move to next line
+      if (!isFirstUpdate) {
+        process.stdout.clearLine(0);
+        process.stdout.cursorTo(0);
+      }
       console.log('');
     }
   };

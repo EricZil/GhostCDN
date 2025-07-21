@@ -343,9 +343,11 @@ class StorageService {
    * @param {string} fileKey - The key of the uploaded file
    * @param {boolean} isRegisteredUser - Whether the user is registered
    * @param {Object} options - Processing options
+   * @param {Object} user - User object (optional)
+   * @param {boolean} isCliUpload - Whether this is a CLI upload
    * @returns {Promise<Object>} - File details
    */
-  async completeDirectUpload(fileKey, isRegisteredUser = false, options = {}, user = null) {
+  async completeDirectUpload(fileKey, isRegisteredUser = false, options = {}, user = null, isCliUpload = false) {
     try {
       const bucketName = process.env.DO_SPACES_BUCKET_NAME;
       
@@ -458,6 +460,8 @@ class StorageService {
                 uploadedAt: new Date(),
                 width: width || null,
                 height: height || null,
+                uploadSource: isCliUpload ? 'cli' : 'web',
+                hasThumbnails: Object.keys(thumbnailsObj).length > 0,
                 user: {
                   connect: { id: userId }
                 }
@@ -480,7 +484,9 @@ class StorageService {
               height: height || null,
               uploadedAt: new Date(),
               expiresAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000), // 14 days from now
-              isDeleted: false
+              isDeleted: false,
+              uploadSource: isCliUpload ? 'cli' : 'web',
+              hasThumbnails: Object.keys(thumbnailsObj).length > 0
             },
           });
           console.log(`Guest file recorded in database: ${guestRecord.id}`);

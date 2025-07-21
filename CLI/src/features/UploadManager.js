@@ -380,32 +380,51 @@ class UploadManager {
     const savedOptions = this.settings.getUploadOptions();
     console.log(chalk.dim('Using saved preferences. Change them in Settings if needed.\n'));
 
-    const options = await inquirer.prompt([
+    // Check if file is an image
+    const isImage = fileInfo.mimeType.startsWith('image/');
+    
+    // Build prompts array conditionally
+    const prompts = [
       {
         type: 'confirm',
         name: 'preserveFilename',
         message: 'Preserve original filename?',
         default: savedOptions.preserveFilename
-      },
-      {
-        type: 'confirm',
-        name: 'optimize',
-        message: 'Optimize file (recommended for images)?',
-        default: savedOptions.optimize && fileInfo.mimeType.startsWith('image/')
-      },
-      {
-        type: 'confirm',
-        name: 'generateThumbnails',
-        message: 'Generate thumbnails (for images)?',
-        default: savedOptions.generateThumbnails && fileInfo.mimeType.startsWith('image/')
-      },
-      {
-        type: 'input',
-        name: 'customName',
-        message: 'Custom display name (optional):',
-        default: savedOptions.customName || ''
       }
-    ]);
+    ];
+
+    // Only add image-specific options for image files
+    if (isImage) {
+      prompts.push(
+        {
+          type: 'confirm',
+          name: 'optimize',
+          message: 'Optimize file (recommended for images)?',
+          default: savedOptions.optimize
+        },
+        {
+          type: 'confirm',
+          name: 'generateThumbnails',
+          message: 'Generate thumbnails?',
+          default: savedOptions.generateThumbnails
+        }
+      );
+    }
+
+    prompts.push({
+      type: 'input',
+      name: 'customName',
+      message: 'Custom display name (optional):',
+      default: savedOptions.customName || ''
+    });
+
+    const options = await inquirer.prompt(prompts);
+
+    // Set default values for image options if not an image
+    if (!isImage) {
+      options.optimize = false;
+      options.generateThumbnails = false;
+    }
 
     // All files are public by default
     options.isPublic = true;
@@ -431,7 +450,7 @@ class UploadManager {
    * Upload file to GhostCDN
    */
   async uploadFile(filePath, fileInfo, options) {
-    const spinner = ora('Preparing upload...').start();
+    let spinner = ora('Preparing upload...').start();
 
     try {
       // Step 1: Get presigned URL
