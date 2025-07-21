@@ -1,5 +1,4 @@
 const chalk = require('chalk');
-const figlet = require('figlet');
 
 /**
  * Clear the terminal screen
@@ -12,16 +11,20 @@ function clearScreen() {
  * Show welcome banner
  */
 function showWelcome() {
-  const title = figlet.textSync('GhostCDN', {
-    font: 'ANSI Shadow',
-    horizontalLayout: 'default',
-    verticalLayout: 'default'
-  });
+  // Simple text banner without figlet
+  const banner = `
+ ██████╗ ██╗  ██╗ ██████╗ ███████╗████████╗ ██████╗██████╗ ███╗   ██╗
+██╔════╝ ██║  ██║██╔═══██╗██╔════╝╚══██╔══╝██╔════╝██╔══██╗████╗  ██║
+██║  ███╗███████║██║   ██║███████╗   ██║   ██║     ██║  ██║██╔██╗ ██║
+██║   ██║██╔══██║██║   ██║╚════██║   ██║   ██║     ██║  ██║██║╚██╗██║
+╚██████╔╝██║  ██║╚██████╔╝███████║   ██║   ╚██████╗██████╔╝██║ ╚████║
+ ╚═════╝ ╚═╝  ╚═╝ ╚═════╝ ╚══════╝   ╚═╝    ╚═════╝╚═════╝ ╚═╝  ╚═══╝
+  `;
 
   // Simple banner without boxen
   console.log('');
   console.log(chalk.cyan('═'.repeat(60)));
-  console.log(chalk.cyan(title));
+  console.log(chalk.cyan(banner));
   console.log('');
   console.log(chalk.white('           Professional File Upload CLI'));
   console.log(chalk.dim('           Secure • Fast • Reliable'));
@@ -139,21 +142,48 @@ function showBox(message, options = {}) {
  * Show progress bar
  */
 function createProgressBar(total, options = {}) {
-  // Simple progress implementation without cli-progress
+  // Enhanced progress implementation for large file uploads
   let current = 0;
   
   return {
     start: (total, value) => {
       current = value || 0;
     },
-    update: (value) => {
-      current = value;
-      const percentage = Math.round((current / total) * 100);
-      const barLength = 30;
-      const filledLength = Math.round((percentage / 100) * barLength);
-      const bar = '█'.repeat(filledLength) + '░'.repeat(barLength - filledLength);
-      
-      process.stdout.write(`\r${chalk.cyan(bar)} ${percentage}% (${current}/${total})`);
+    update: (progress, data = {}) => {
+      // Support both old format (value) and new format (progress, data)
+      if (typeof progress === 'number' && progress <= 1) {
+        // New format: progress is 0-1, data contains additional info
+        const percentage = Math.round(progress * 100);
+        const barLength = 40;
+        const filledLength = Math.round(progress * barLength);
+        const bar = '█'.repeat(filledLength) + '░'.repeat(barLength - filledLength);
+        
+        let statusLine = `\r${chalk.cyan(bar)} ${percentage}%`;
+        
+        if (data.filename) {
+          statusLine += ` | ${chalk.white(data.filename)}`;
+        }
+        if (data.uploaded && data.total) {
+          statusLine += ` | ${chalk.green(data.uploaded)}/${chalk.blue(data.total)}`;
+        }
+        if (data.speed) {
+          statusLine += ` | ${chalk.yellow(data.speed)}`;
+        }
+        if (data.eta) {
+          statusLine += ` | ETA: ${chalk.magenta(data.eta)}`;
+        }
+        
+        process.stdout.write(statusLine);
+      } else {
+        // Old format: progress is current value
+        current = progress;
+        const percentage = Math.round((current / total) * 100);
+        const barLength = 30;
+        const filledLength = Math.round((percentage / 100) * barLength);
+        const bar = '█'.repeat(filledLength) + '░'.repeat(barLength - filledLength);
+        
+        process.stdout.write(`\r${chalk.cyan(bar)} ${percentage}% (${current}/${total})`);
+      }
     },
     stop: () => {
       console.log('');

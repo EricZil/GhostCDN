@@ -2,7 +2,7 @@ const path = require('path');
 const os = require('os');
 
 // API Configuration - Use environment variable or default to production
-const API_BASE_URL = process.env.GHOSTCDN_API_URL || 'https://api.ghostcdn.xyz/api/v1';
+const API_BASE_URL = process.env.GHOSTCDN_API_URL || 'http://localhost:3001/api/v1';
 const WEB_DASHBOARD_URL = process.env.GHOSTCDN_WEB_URL || 'https://ghostcdn.xyz';
 const DOCS_URL = process.env.GHOSTCDN_DOCS_URL || 'https://ghostcdn.xyz/docs';
 
@@ -11,7 +11,7 @@ const SERVICE_NAME = 'GhostCDN CLI';
 const APP_NAME = 'ghostcdn-cli';
 
 // File Configuration
-const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
+const MAX_FILE_SIZE = 50 * 1024 * 1024 * 1024; // 50GB for CLI uploads
 const SUPPORTED_FILE_TYPES = [
   // Images
   'image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml',
@@ -77,15 +77,15 @@ const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 100;
 
 // Timeouts
-const API_TIMEOUT = 30000; // 30 seconds
-const UPLOAD_TIMEOUT = 300000; // 5 minutes
+const API_TIMEOUT = 60000; // 60 seconds for API calls
+const UPLOAD_TIMEOUT = 3600000; // 60 minutes for large file uploads
 
 // Error Messages
 const ERROR_MESSAGES = {
   NETWORK_ERROR: 'Network error occurred. Please check your internet connection.',
   AUTH_FAILED: 'Authentication failed. Please check your API key.',
   FILE_NOT_FOUND: 'The specified file could not be found.',
-  FILE_TOO_LARGE: `File size exceeds the maximum limit of ${MAX_FILE_SIZE / (1024 * 1024)}MB.`,
+  FILE_TOO_LARGE: `File size exceeds the maximum limit of ${MAX_FILE_SIZE / (1024 * 1024 * 1024)}GB.`,
   UNSUPPORTED_FILE_TYPE: 'This file type is not supported.',
   SERVER_ERROR: 'Server error occurred. Please try again later.',
   UPLOAD_FAILED: 'File upload failed. Please try again.',

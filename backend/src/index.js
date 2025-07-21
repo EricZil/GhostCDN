@@ -14,6 +14,8 @@ const dashboardRoutes = require('./routes/dashboard.routes');
 const adminRoutes = require('./routes/admin.routes');
 const publicRoutes = require('./routes/public.routes');
 const authRoutes = require('./routes/auth.routes');
+const apiKeysRoutes = require('./routes/apiKeys');
+const apiRoutes = require('./routes/api.routes');
 const { router: healthRoutes, performBackgroundHealthCheck } = require('./routes/health.routes');
 const { validateApiKey } = require('./middleware/apiKey.middleware');
 const prisma = require('./lib/prisma');
@@ -72,6 +74,12 @@ app.use('/api/upload', uploadLimiter, validateApiKey, uploadRoutes);
 app.use('/api/storage', uploadLimiter, validateApiKey, storageRoutes);
 app.use('/api/dashboard', validateApiKey, dashboardRoutes);
 app.use('/api/admin', adminLimiter, adminRoutes);
+
+// API Keys management routes (requires JWT authentication, not API key)
+app.use('/api/keys', apiKeysRoutes);
+
+// Public API routes for external users (requires Bearer token authentication)
+app.use('/api/v1', apiRoutes);
 
 // Auth routes (no API key required for frontend, but rate limited)
 app.use('/api/auth', publicLimiter, authRoutes);

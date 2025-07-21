@@ -2,19 +2,17 @@ const inquirer = require('inquirer');
 const chalk = require('chalk');
 const ora = require('ora');
 const axios = require('axios');
-const Table = require('cli-table3');
-const open = require('open');
 
-const { 
-  API_BASE_URL, 
+const {
+  API_BASE_URL,
   ERROR_MESSAGES,
   SUCCESS_MESSAGES
 } = require('../config/constants');
 
-const { 
-  showError, 
-  showSuccess, 
-  showWarning, 
+const {
+  showError,
+  showSuccess,
+  showWarning,
   showInfo,
   formatBytes,
   getFileTypeIcon,
@@ -22,6 +20,8 @@ const {
   formatDate,
   truncateText
 } = require('../utils/display');
+
+const { openUrl } = require('../utils/openUrl');
 
 class FileManager {
   constructor(authManager) {
@@ -542,12 +542,9 @@ class FileManager {
 
     const file = this.currentFiles[answer.fileIndex];
 
-    try {
-      await open(file.url);
+    const opened = await openUrl(file.url, file.originalName);
+    if (opened) {
       showSuccess(`Opened ${file.originalName} in browser`);
-    } catch (error) {
-      showError('Could not open browser');
-      console.log(chalk.blue(`URL: ${file.url}`));
     }
   }
 

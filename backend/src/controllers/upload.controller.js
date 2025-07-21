@@ -75,12 +75,17 @@ class UploadController {
         });
       }
       
-      // Validate file size for registered users (100MB limit)
-      const maxSize = 100 * 1024 * 1024; // 100MB
+      // Validate file size for registered users (50GB limit for CLI, 100MB for web)
+      // Check if this is a CLI request (has API key authentication)
+      const isCliRequest = req.headers.authorization && req.headers.authorization.startsWith('Bearer ') && req.headers.authorization.length > 50;
+      const maxSize = isCliRequest ? 50 * 1024 * 1024 * 1024 : 100 * 1024 * 1024; // 50GB for CLI, 100MB for web
+      const sizeUnit = isCliRequest ? 'GB' : 'MB';
+      const sizeLimit = isCliRequest ? maxSize / (1024 * 1024 * 1024) : maxSize / (1024 * 1024);
+      
       if (fileSize > maxSize) {
         return res.status(400).json({
           success: false,
-          message: `File size exceeds the limit of ${maxSize / (1024 * 1024)}MB for user uploads`
+          message: `File size exceeds the limit of ${sizeLimit}${sizeUnit} for ${isCliRequest ? 'CLI' : 'web'} uploads`
         });
       }
       

@@ -10,8 +10,25 @@ const prisma = require('../lib/prisma');
 
 const validateNextAuthJWT = async (req, res, next) => {
   try {
+    console.log('[JWT Middleware] Starting validation');
+    console.log('[JWT Middleware] Headers:', req.headers);
+    console.log('[JWT Middleware] Body:', req.body);
+    console.log('[JWT Middleware] Query:', req.query);
+    
     const authHeader = req.headers.authorization;
-    const token = req.body.token || req.query.token || (authHeader && authHeader.startsWith('Bearer ') ? authHeader.substring(7) : null);
+    console.log('[JWT Middleware] authHeader:', authHeader);
+    console.log('[JWT Middleware] req.body type:', typeof req.body);
+    console.log('[JWT Middleware] req.query type:', typeof req.query);
+    
+    let token = null;
+    try {
+      token = req.body?.token || req.query?.token || (authHeader && authHeader.startsWith('Bearer ') ? authHeader.substring(7) : null);
+    } catch (tokenError) {
+      console.error('[JWT Middleware] Error extracting token:', tokenError);
+      throw tokenError;
+    }
+    
+    console.log('[JWT Middleware] Extracted token:', token ? 'Present' : 'Missing');
     
     if (!token) {
       return res.status(401).json({

@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 
 const chalk = require('chalk');
-const figlet = require('figlet');
 
 const AuthManager = require('./auth/AuthManager');
 const MainMenu = require('./ui/MainMenu');

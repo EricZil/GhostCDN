@@ -293,3 +293,283 @@ export async function checkStorageStatus(): Promise<{
 }
 
  
+/**
+ * API Key Management Functions
+ */
+
+export interface ApiKey {
+  id: string;
+  name: string;
+  permissions: {
+    files: {
+      read: boolean;
+      write: boolean;
+      delete: boolean;
+    };
+    analytics: {
+      read: boolean;
+    };
+  };
+  lastUsed: string | null;
+  usageCount: number;
+  createdAt: string;
+  expiresAt: string | null;
+  isActive: boolean;
+}
+
+export interface ApiKeyUsage {
+  totalRequests: number;
+  dailyUsage: Array<{
+    date: string;
+    requests: number;
+    avgResponseTime: number;
+  }>;
+  statusCodes: Array<{
+    statusCode: number;
+    count: number;
+  }>;
+  topEndpoints: Array<{
+    endpoint: string;
+    requests: number;
+    avgResponseTime: number;
+  }>;
+  period: string;
+}
+
+/**
+ * Get all API keys for the authenticated user
+ * @param token JWT authentication token
+ * @returns Promise with the API keys list
+ */
+export async function getApiKeys(token: string): Promise<{
+  success: boolean;
+  data: {
+    keys: ApiKey[];
+    total: number;
+  };
+}> {
+  const response = await fetch('/api/proxy', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      endpoint: 'keys',
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json();
+    throw new Error(errorData.message || 'Failed to fetch API keys');
+  }
+
+  return response.json();
+}
+
+/**
+ * Create a new API key
+ * @param token JWT authentication token
+ * @param keyData API key creation data
+ * @returns Promise with the created API key
+ */
+export async function createApiKey(
+  token: string,
+  keyData: {
+    name: string;
+    permissions: {
+      files: { read: boolean; write: boolean; delete: boolean };
+      analytics: { read: boolean };
+    };
+    expiresIn?: number | null;
+  }
+): Promise<{
+  success: boolean;
+  data: ApiKey & { key: string };
+  message: string;
+}> {
+  const response = await fetch('/api/proxy', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      endpoint: 'keys',
+      method: 'POST',
+      body: keyData,
+      headers: {
+        'Authorization': `Bearer ${token}`,
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json();
+    throw new Error(errorData.message || 'Failed to create API key');
+  }
+
+  return response.json();
+}
+
+/**
+ * Update an API key
+ * @param token JWT authentication token
+ * @param keyId API key ID
+ * @param updates Updates to apply
+ * @returns Promise with the updated API key
+ */
+export async function updateApiKey(
+  token: string,
+  keyId: string,
+  updates: {
+    name?: string;
+    permissions?: {
+      files: { read: boolean; write: boolean; delete: boolean };
+      analytics: { read: boolean };
+    };
+    isActive?: boolean;
+  }
+): Promise<{
+  success: boolean;
+  data: ApiKey;
+  message: string;
+}> {
+  const response = await fetch('/api/proxy', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      endpoint: `keys/${keyId}`,
+      method: 'PUT',
+      body: updates,
+      headers: {
+        'Authorization': `Bearer ${token}`,
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json();
+    throw new Error(errorData.message || 'Failed to update API key');
+  }
+
+  return response.json();
+}
+
+/**
+ * Delete an API key
+ * @param token JWT authentication token
+ * @param keyId API key ID
+ * @returns Promise with the deletion result
+ */
+export async function deleteApiKey(
+  token: string,
+  keyId: string
+): Promise<{
+  success: boolean;
+  message: string;
+}> {
+  const response = await fetch('/api/proxy', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      endpoint: `keys/${keyId}`,
+      method: 'DELETE',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json();
+    throw new Error(errorData.message || 'Failed to delete API key');
+  }
+
+  return response.json();
+}
+
+/**
+ * Rotate an API key
+ * @param token JWT authentication token
+ * @param keyId API key ID
+ * @returns Promise with the new API key
+ */
+export async function rotateApiKey(
+  token: string,
+  keyId: string
+): Promise<{
+  success: boolean;
+  data: ApiKey & { key: string };
+  message: string;
+}> {
+  const response = await fetch('/api/proxy', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      endpoint: `keys/${keyId}/rotate`,
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json();
+    throw new Error(errorData.message || 'Failed to rotate API key');
+  }
+
+  return response.json();
+}
+
+/**
+ * Get usage statistics for an API key
+ * @param token JWT authentication token
+ * @param keyId API key ID
+ * @param days Number of days to fetch (default: 30)
+ * @returns Promise with the usage statistics
+ */
+export async function getApiKeyUsage(
+  token: string,
+  keyId: string,
+  days: number = 30
+): Promise<{
+  success: boolean;
+  data: ApiKeyUsage;
+}> {
+  const response = await fetch('/api/proxy', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      endpoint: `keys/${keyId}/usage?days=${days}`,
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json();
+    throw new Error(errorData.message || 'Failed to fetch usage statistics');
+  }
+
+  return response.json();
+}

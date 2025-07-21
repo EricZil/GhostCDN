@@ -98,12 +98,21 @@ export async function GET(request: NextRequest) {
       );
     }
     
+    // Prepare headers for the backend request
+    const headers: Record<string, string> = {
+      'X-API-KEY': API_KEY || ''
+    };
+    
+    // Forward Authorization header from the original request
+    const authHeader = request.headers.get('authorization');
+    if (authHeader) {
+      headers['Authorization'] = authHeader;
+    }
+    
     // Forward the request to the backend with the API key
     const response = await fetch(`${API_URL}/${endpoint}`, {
       method: 'GET',
-      headers: {
-        'X-API-KEY': API_KEY || ''
-      }
+      headers
     });
     
     // Get the response from the backend
@@ -145,12 +154,21 @@ export async function DELETE(request: NextRequest) {
       );
     }
     
+    // Prepare headers for the backend request
+    const headers: Record<string, string> = {
+      'X-API-KEY': API_KEY || ''
+    };
+    
+    // Forward Authorization header from the original request
+    const authHeader = request.headers.get('authorization');
+    if (authHeader) {
+      headers['Authorization'] = authHeader;
+    }
+    
     // Forward the request to the backend with the API key
     const response = await fetch(`${API_URL}/${endpoint}`, {
       method: 'DELETE',
-      headers: {
-        'X-API-KEY': API_KEY || ''
-      }
+      headers
     });
     
     // Get the response from the backend

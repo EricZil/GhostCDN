@@ -6,28 +6,29 @@ const ora = require('ora');
 const axios = require('axios');
 const FormData = require('form-data');
 const mimeTypes = require('mime-types');
-const open = require('open');
 
-const { 
-  API_BASE_URL, 
-  MAX_FILE_SIZE, 
-  SUPPORTED_FILE_TYPES, 
+const {
+  API_BASE_URL,
+  MAX_FILE_SIZE,
+  SUPPORTED_FILE_TYPES,
   UPLOAD_OPTIONS,
   UPLOAD_TIMEOUT,
   ERROR_MESSAGES,
   SUCCESS_MESSAGES
 } = require('../config/constants');
 
-const { 
-  showError, 
-  showSuccess, 
-  showWarning, 
+const {
+  showError,
+  showSuccess,
+  showWarning,
   showInfo,
   formatBytes,
   getFileTypeIcon,
   showConfirmation,
   createProgressBar
 } = require('../utils/display');
+
+const { openUrl } = require('../utils/openUrl');
 
 class UploadManager {
   constructor(authManager) {
@@ -475,21 +476,31 @@ class UploadManager {
       // Step 2: Upload file to storage using presigned URL
       spinner.text = 'Uploading file...';
 
-      // Read file data
-      const fileData = fs.readFileSync(filePath);
-      
       // Store file size for success display
-      this.lastFileSize = fileData.length;
+      this.lastFileSize = fileInfo.size;
 
-      await axios.put(uploadUrl, fileData, {
-        headers: {
-          'Content-Type': fileInfo.mimeType,
-          'Content-Length': fileData.length
-        },
-        timeout: UPLOAD_TIMEOUT,
-        maxContentLength: Infinity,
-        maxBodyLength: Infinity
-      });
+      // For large files, use streaming upload with progress
+      if (fileInfo.size > 100 * 1024 * 1024) { // Files larger than 100MB
+        spinner.stop();
+        console.log(chalk.cyan('\n📤 Uploading large file with progress tracking...\n'));
+        
+        await this.uploadLargeFile(uploadUrl, filePath, fileInfo);
+        
+        spinner = ora('Finalizing upload...').start();
+      } else {
+        // For smaller files, use the existing method
+        const fileData = fs.readFileSync(filePath);
+        
+        await axios.put(uploadUrl, fileData, {
+          headers: {
+            'Content-Type': fileInfo.mimeType,
+            'Content-Length': fileData.length
+          },
+          timeout: UPLOAD_TIMEOUT,
+          maxContentLength: Infinity,
+          maxBodyLength: Infinity
+        });
+      }
 
       // Step 3: Complete upload
       spinner.text = 'Finalizing upload...';
@@ -623,12 +634,108 @@ class UploadManager {
    * Open URL in browser
    */
   async openInBrowser(url) {
-    try {
-      await open(url);
+    const opened = await openUrl(url, 'file');
+    if (opened) {
       showSuccess('Opened in browser!');
-    } catch (error) {
-      showError('Could not open browser');
-      console.log(chalk.blue(`URL: ${url}`));
+    }
+  }
+
+  /**
+   * Upload large file with progress tracking
+   */
+  async uploadLargeFile(uploadUrl, filePath, fileInfo) {
+    return new Promise((resolve, reject) => {
+      const fileStream = fs.createReadStream(filePath);
+      const progressBar = createProgressBar();
+      
+      let uploadedBytes = 0;
+      const totalBytes = fileInfo.size;
+      
+      // Track upload progress
+      fileStream.on('data', (chunk) => {
+        uploadedBytes += chunk.length;
+        const progress = Math.round((uploadedBytes / totalBytes) * 100);
+        const speed = this.calculateUploadSpeed(uploadedBytes);
+        const eta = this.calculateETA(uploadedBytes, totalBytes, speed);
+        
+        progressBar.update(progress / 100, {
+          filename: fileInfo.name,
+          uploaded: formatBytes(uploadedBytes),
+          total: formatBytes(totalBytes),
+          speed: formatBytes(speed) + '/s',
+          eta: eta
+        });
+      });
+
+      // Create the HTTP request
+      const https = require('https');
+      const http = require('http');
+      const url = require('url');
+      
+      const parsedUrl = url.parse(uploadUrl);
+      const isHttps = parsedUrl.protocol === 'https:';
+      const httpModule = isHttps ? https : http;
+      
+      const options = {
+        method: 'PUT',
+        hostname: parsedUrl.hostname,
+        port: parsedUrl.port,
+        path: parsedUrl.path,
+        headers: {
+          'Content-Type': fileInfo.mimeType,
+          'Content-Length': fileInfo.size
+        }
+      };
+
+      const req = httpModule.request(options, (res) => {
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          progressBar.stop();
+          console.log(chalk.green('✅ Large file upload completed successfully!'));
+          resolve();
+        } else {
+          progressBar.stop();
+          reject(new Error(`Upload failed with status ${res.statusCode}`));
+        }
+      });
+
+      req.on('error', (error) => {
+        progressBar.stop();
+        reject(error);
+      });
+
+      // Start the upload
+      this.uploadStartTime = Date.now();
+      fileStream.pipe(req);
+    });
+  }
+
+  /**
+   * Calculate upload speed in bytes per second
+   */
+  calculateUploadSpeed(uploadedBytes) {
+    if (!this.uploadStartTime) return 0;
+    
+    const elapsedTime = (Date.now() - this.uploadStartTime) / 1000; // seconds
+    return elapsedTime > 0 ? uploadedBytes / elapsedTime : 0;
+  }
+
+  /**
+   * Calculate estimated time remaining
+   */
+  calculateETA(uploadedBytes, totalBytes, speed) {
+    if (speed === 0) return 'Calculating...';
+    
+    const remainingBytes = totalBytes - uploadedBytes;
+    const remainingSeconds = remainingBytes / speed;
+    
+    if (remainingSeconds < 60) {
+      return `${Math.round(remainingSeconds)}s`;
+    } else if (remainingSeconds < 3600) {
+      return `${Math.round(remainingSeconds / 60)}m`;
+    } else {
+      const hours = Math.floor(remainingSeconds / 3600);
+      const minutes = Math.round((remainingSeconds % 3600) / 60);
+      return `${hours}h ${minutes}m`;
     }
   }
 }

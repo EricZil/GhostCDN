@@ -9,10 +9,10 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
-    "build": "pkg . --out-path=dist",
-    "build:win": "pkg . --targets=node18-win-x64 --out-path=dist",
-    "build:mac": "pkg . --targets=node18-macos-x64 --out-path=dist",
-    "build:linux": "pkg . --targets=node18-linux-x64 --out-path=dist",
+    "build": "pkg . --targets node16-win-x64 --out-path dist",
+    "build:win": "pkg . --targets node16-win-x64 --out-path dist",
+    "build:mac": "pkg . --targets node16-macos-x64 --out-path dist",
+    "build:linux": "pkg . --targets node16-linux-x64 --out-path dist",
     "build:all": "npm run build:win && npm run build:mac && npm run build:linux"
   },
   "keywords": [
@@ -28,27 +28,22 @@
     "axios": "^1.6.2",
     "chalk": "^4.1.2",
     "clipboardy": "^2.3.0",
-    "figlet": "^1.7.0",
     "form-data": "^4.0.0",
     "inquirer": "^8.2.6",
     "mime-types": "^2.1.35",
-    "open": "^8.4.2",
     "ora": "^5.4.1"
   },
   "devDependencies": {
+    "esbuild": "^0.25.8",
+    "nexe": "5.0.0-beta.4",
     "nodemon": "^3.0.2",
     "pkg": "^5.8.1"
   },
-  "pkg": {
-    "scripts": [
-      "src/**/*.js"
-    ],
-    "assets": [
-      "node_modules/figlet/fonts/*.flf"
-    ],
-    "outputPath": "dist"
-  },
   "engines": {
     "node": ">=16.0.0"
+  },
+  "pkg": {
+    "targets": ["node16-win-x64", "node16-macos-x64", "node16-linux-x64"],
+    "outputPath": "dist"
   }
 }

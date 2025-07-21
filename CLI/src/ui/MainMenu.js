@@ -1,9 +1,8 @@
 const inquirer = require('inquirer');
 const chalk = require('chalk');
-const figlet = require('figlet');
-const open = require('open');
 
 const { showError, showSuccess, showInfo, showWarning } = require('../utils/display');
+const { openUrl } = require('../utils/openUrl');
 const { WEB_DASHBOARD_URL, DOCS_URL } = require('../config/constants');
 
 // Import managers
@@ -47,22 +46,19 @@ class MainMenu {
    * Show application header with ASCII art
    */
   async showHeader() {
-    return new Promise((resolve) => {
-      figlet('GhostCDN CLI', {
-        font: 'ANSI Shadow',
-        horizontalLayout: 'fitted',
-        verticalLayout: 'fitted'
-      }, (err, data) => {
-        if (err) {
-          console.log(chalk.cyan.bold('\n🚀 GhostCDN CLI\n'));
-        } else {
-          console.log(chalk.cyan(data));
-        }
-        
-        console.log(chalk.dim('Simple file upload tool - Manage everything else in the web dashboard\n'));
-        resolve();
-      });
-    });
+    // Simple text banner without figlet dependency
+    const banner = `
+ ██████╗ ██╗  ██╗ ██████╗ ███████╗████████╗ ██████╗██████╗ ███╗   ██╗
+██╔════╝ ██║  ██║██╔═══██╗██╔════╝╚══██╔══╝██╔════╝██╔══██╗████╗  ██║
+██║  ███╗███████║██║   ██║███████╗   ██║   ██║     ██║  ██║██╔██╗ ██║
+██║   ██║██╔══██║██║   ██║╚════██║   ██║   ██║     ██║  ██║██║╚██╗██║
+╚██████╔╝██║  ██║╚██████╔╝███████║   ██║   ╚██████╗██████╔╝██║ ╚████║
+ ╚═════╝ ╚═╝  ╚═╝ ╚═════╝ ╚══════╝   ╚═╝    ╚═════╝╚═════╝ ╚═╝  ╚═══╝
+                                CLI
+    `;
+    
+    console.log(chalk.cyan(banner));
+    console.log(chalk.dim('Simple file upload tool - Manage everything else in the web dashboard\n'));
   }
 
   /**
@@ -183,14 +179,12 @@ class MainMenu {
    * Open web dashboard in browser
    */
   async openWebDashboard() {
-    try {
-      showInfo('Opening web dashboard...');
-      await open(WEB_DASHBOARD_URL);
+    showInfo('Opening web dashboard...');
+    const opened = await openUrl(WEB_DASHBOARD_URL, 'web dashboard');
+    
+    if (opened) {
       showSuccess('Web dashboard opened in your browser');
       showInfo('Use the dashboard to manage files, view analytics, and configure settings');
-    } catch (error) {
-      showError('Could not open web dashboard');
-      console.log(chalk.blue(`Please visit: ${WEB_DASHBOARD_URL}`));
     }
   }
 
@@ -198,13 +192,11 @@ class MainMenu {
    * Open documentation in browser
    */
   async openDocumentation() {
-    try {
-      showInfo('Opening documentation...');
-      await open(DOCS_URL);
+    showInfo('Opening documentation...');
+    const opened = await openUrl(DOCS_URL, 'documentation');
+    
+    if (opened) {
       showSuccess('Documentation opened in your browser');
-    } catch (error) {
-      showError('Could not open documentation');
-      console.log(chalk.blue(`Please visit: ${DOCS_URL}`));
     }
   }
 
