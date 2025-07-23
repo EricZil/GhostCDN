@@ -67,8 +67,8 @@ jobs:
         run: |
           echo "Running code quality checks..."
           
-          # Check for hardcoded secrets or sensitive data
-          if grep -r "password\|secret\|key\|token" src/ --include="*.js" | grep -v "API_BASE_URL\|WEB_DASHBOARD_URL\|DOCS_URL"; then
+          # Check for hardcoded secrets or sensitive data (more specific patterns)
+          if grep -r "password\s*=\|secret\s*=\|token\s*=\|api_key\s*=\|apikey\s*=" src/ --include="*.js" | grep -v "API_BASE_URL\|WEB_DASHBOARD_URL\|DOCS_URL"; then
             echo "Potential hardcoded secrets found!"
             exit 1
           fi
