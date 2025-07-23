@@ -49,6 +49,7 @@ export default function ApiKeyAnalytics({ period, onPeriodChange }: ApiKeyAnalyt
   const [selectedKeyId, setSelectedKeyId] = useState<string | null>(null);
   const [analytics, setAnalytics] = useState<ApiKeyStats | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [rateLimited, setRateLimited] = useState(false);
 
   // Get JWT token from API
   const getJwtToken = async (): Promise<string> => {
@@ -124,29 +125,38 @@ export default function ApiKeyAnalytics({ period, onPeriodChange }: ApiKeyAnalyt
       if (response.ok) {
         const data = await response.json();
         setAnalytics(data.data);
+        setRateLimited(false); // Reset rate limit flag on successful request
+      } else if (response.status === 429) {
+        // Rate limited - don't show error notification to prevent spam
+        console.warn('Rate limited - reducing refresh frequency');
+        setRateLimited(true);
+        return;
       } else {
         throw new Error('Failed to fetch analytics');
       }
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Error fetching analytics:', error);
-      showNotification({
-        type: 'error',
-        title: 'Error',
-        message: 'Failed to load analytics data',
-        duration: 5000
-      });
+      // Only show notification for non-rate-limit errors
+      if (!(error instanceof Error) || !error.message?.includes('429')) {
+        showNotification({
+          type: 'error',
+          title: 'Error',
+          message: 'Failed to load analytics data',
+          duration: 5000
+        });
+      }
     } finally {
       setRefreshing(false);
     }
   }, [showNotification, period, getAuthHeaders]);
 
-  // Auto-refresh analytics every 30 seconds
+  // Auto-refresh analytics every 5 minutes to prevent rate limiting
   useEffect(() => {
     if (!selectedKeyId) return;
 
     const interval = setInterval(() => {
       fetchAnalytics(selectedKeyId);
-    }, 30000);
+    }, 300000); // 5 minutes
 
     return () => clearInterval(interval);
   }, [selectedKeyId, period, fetchAnalytics]);
@@ -210,8 +220,10 @@ export default function ApiKeyAnalytics({ period, onPeriodChange }: ApiKeyAnalyt
         <div className="flex items-center space-x-4">
           <h3 className="text-2xl font-semibold text-white">API Analytics</h3>
           <div className="flex items-center space-x-2">
-            <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-            <span className="text-sm text-green-400 font-medium">Live Data</span>
+            <div className={`w-2 h-2 rounded-full ${rateLimited ? 'bg-yellow-500' : 'bg-green-500 animate-pulse'}`}></div>
+            <span className={`text-sm font-medium ${rateLimited ? 'text-yellow-400' : 'text-green-400'}`}>
+              {rateLimited ? 'Rate Limited' : 'Live Data'}
+            </span>
           </div>
         </div>
         
