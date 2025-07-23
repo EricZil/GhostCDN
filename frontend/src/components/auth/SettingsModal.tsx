@@ -32,7 +32,7 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     loading: storageLoading,
     dashboardStats,
     storageInfo,
-    fetchStorage,
+    storageQuery,
     formatFileSize,
   } = useDashboard();
 
@@ -84,9 +84,9 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   // Fetch storage data when storage tab is opened
   useEffect(() => {
     if (activeTab === 'storage' && session?.user?.email && !storageInfo) {
-      fetchStorage();
+      storageQuery.refetch();
     }
-  }, [activeTab, session?.user?.email, storageInfo, fetchStorage]);
+  }, [activeTab, session?.user?.email, storageInfo, storageQuery]);
 
   // Check for OAuth callback results
   useEffect(() => {
@@ -736,4 +736,4 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
       )}
     </AnimatePresence>
   );
-} 
+}

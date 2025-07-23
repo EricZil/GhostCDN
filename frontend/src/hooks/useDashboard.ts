@@ -1,4 +1,5 @@
-import { useState, useCallback } from 'react';
+import { useCallback } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
 
 export interface DashboardStats {
@@ -70,17 +71,21 @@ export interface StorageInfo {
   timestamp?: string;
 }
 
+// Query keys for consistent caching
+export const dashboardQueryKeys = {
+  overview: (userEmail: string) => ['dashboard', 'overview', userEmail] as const,
+  uploads: (userEmail: string, page?: number, limit?: number, filters?: Record<string, unknown>) => 
+    ['dashboard', 'uploads', userEmail, page, limit, filters] as const,
+  analytics: (userEmail: string, period?: string) => ['dashboard', 'analytics', userEmail, period] as const,
+  storage: (userEmail: string) => ['dashboard', 'storage', userEmail] as const,
+  activities: (userEmail: string, page?: number, limit?: number) => 
+    ['dashboard', 'activities', userEmail, page, limit] as const,
+  duplicates: (userEmail: string) => ['dashboard', 'duplicates', userEmail] as const,
+} as const;
+
 export function useDashboard() {
   const { user } = useAuth();
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  // State for different data types
-  const [dashboardStats, setDashboardStats] = useState<DashboardStats | null>(null);
-  const [uploads, setUploads] = useState<Upload[]>([]);
-  const [analytics, setAnalytics] = useState<Analytics | null>(null);
-  const [storageInfo, setStorageInfo] = useState<StorageInfo | null>(null);
-  const [activities, setActivities] = useState<Activity[]>([]);
+  const queryClient = useQueryClient();
 
   // Generic API call function
   const callDashboardAPI = useCallback(async (
@@ -121,155 +126,127 @@ export function useDashboard() {
     return response.json();
   }, [user]);
 
-  // Fetch dashboard overview
-  const fetchOverview = useCallback(async () => {
-    if (!user) return;
-    
-    try {
-      setLoading(true);
-      setError(null);
+  // Dashboard overview query
+  const overviewQuery = useQuery({
+    queryKey: dashboardQueryKeys.overview(user?.email || ''),
+    queryFn: async () => {
       const response = await callDashboardAPI('overview');
       if (response.success) {
-        setDashboardStats(response.data);
+        return response.data;
       }
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to fetch overview';
-      setError(errorMessage);
-      throw err;
-    } finally {
-      setLoading(false);
-    }
-  }, [callDashboardAPI, user]);
+      throw new Error(response.message || 'Failed to fetch overview');
+    },
+    enabled: !!user?.email,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    gcTime: 10 * 60 * 1000, // 10 minutes
+    refetchOnWindowFocus: false,
+  });
 
-  // Fetch uploads with filters
-  const fetchUploads = useCallback(async (page = 1, limit = 20, filters?: Record<string, unknown>) => {
-    if (!user) return;
-    
-    try {
-      setLoading(true);
-      setError(null);
-      
-      const queryParams: Record<string, string> = {
-        page: page.toString(),
-        limit: limit.toString()
-      };
-      
-      // Add filter parameters
-      if (filters) {
-        if (filters.query) queryParams.query = String(filters.query);
-        if (filters.fileType && filters.fileType !== 'all') queryParams.fileType = String(filters.fileType);
-        if (filters.dateRange && filters.dateRange !== 'all') queryParams.dateRange = String(filters.dateRange);
-        if (filters.sizeRange && filters.sizeRange !== 'all') queryParams.sizeRange = String(filters.sizeRange);
-        if (filters.sortBy) queryParams.sortBy = String(filters.sortBy);
-        if (filters.sortOrder) queryParams.order = String(filters.sortOrder);
-      }
-      
-      const response = await callDashboardAPI('uploads', 'GET', undefined, queryParams);
-      if (response.success) {
-        setUploads(response.data.uploads);
-        return response.data.pagination;
-      }
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to fetch uploads';
-      setError(errorMessage);
-      throw err;
-    } finally {
-      setLoading(false);
-    }
-  }, [callDashboardAPI, user]);
+  // Uploads query with pagination and filters
+  const useUploads = (page = 1, limit = 20, filters?: Record<string, unknown>) => {
+    return useQuery({
+      queryKey: dashboardQueryKeys.uploads(user?.email || '', page, limit, filters),
+      queryFn: async () => {
+        const queryParams: Record<string, string> = {
+          page: page.toString(),
+          limit: limit.toString()
+        };
+        
+        // Add filter parameters
+        if (filters) {
+          if (filters.query) queryParams.query = String(filters.query);
+          if (filters.fileType && filters.fileType !== 'all') queryParams.fileType = String(filters.fileType);
+          if (filters.dateRange && filters.dateRange !== 'all') queryParams.dateRange = String(filters.dateRange);
+          if (filters.sizeRange && filters.sizeRange !== 'all') queryParams.sizeRange = String(filters.sizeRange);
+          if (filters.sortBy) queryParams.sortBy = String(filters.sortBy);
+          if (filters.sortOrder) queryParams.order = String(filters.sortOrder);
+        }
+        
+        const response = await callDashboardAPI('uploads', 'GET', undefined, queryParams);
+        if (response.success) {
+          return response.data;
+        }
+        throw new Error(response.message || 'Failed to fetch uploads');
+      },
+      enabled: !!user?.email,
+      staleTime: 2 * 60 * 1000, // 2 minutes
+      gcTime: 5 * 60 * 1000, // 5 minutes
+      refetchOnWindowFocus: false,
+    });
+  };
 
-  // Fetch analytics
-  const fetchAnalytics = useCallback(async (period = '7d') => {
-    try {
-      setLoading(true);
-      setError(null);
-      const response = await callDashboardAPI('analytics', 'GET', undefined, { period });
-      if (response.success) {
-        setAnalytics(response.data);
-      }
-    } catch {
-      setError('Failed to fetch analytics');
-    } finally {
-      setLoading(false);
-    }
-  }, [callDashboardAPI]);
+  // Analytics query
+  const useAnalytics = (period = '7d') => {
+    return useQuery({
+      queryKey: dashboardQueryKeys.analytics(user?.email || '', period),
+      queryFn: async () => {
+        const response = await callDashboardAPI('analytics', 'GET', undefined, { period });
+        if (response.success) {
+          return response.data;
+        }
+        throw new Error(response.message || 'Failed to fetch analytics');
+      },
+      enabled: !!user?.email,
+      staleTime: 10 * 60 * 1000, // 10 minutes
+      gcTime: 15 * 60 * 1000, // 15 minutes
+      refetchOnWindowFocus: false,
+    });
+  };
 
-  // Fetch storage info
-  const fetchStorage = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
+  // Storage info query
+  const storageQuery = useQuery({
+    queryKey: dashboardQueryKeys.storage(user?.email || ''),
+    queryFn: async () => {
       const response = await callDashboardAPI('storage');
       if (response.success) {
-        setStorageInfo(response.data);
-      } else {
-        setError(response.message || 'Failed to fetch storage info');
+        return response.data;
       }
-    } catch (err) {
-      console.error('fetchStorage error:', err);
-      setError(err instanceof Error ? err.message : 'Failed to fetch storage info');
-    } finally {
-      setLoading(false);
-    }
-  }, [callDashboardAPI]);
+      throw new Error(response.message || 'Failed to fetch storage info');
+    },
+    enabled: !!user?.email,
+    staleTime: 3 * 60 * 1000, // 3 minutes
+    gcTime: 8 * 60 * 1000, // 8 minutes
+    refetchOnWindowFocus: false,
+  });
 
-  // Fetch activities
-  const fetchActivities = useCallback(async (page = 1, limit = 20) => {
-    try {
-      setLoading(true);
-      setError(null);
-      const response = await callDashboardAPI('activity', 'GET', undefined, {
-        page: page.toString(),
-        limit: limit.toString()
-      });
+  // Activities query
+  const useActivities = (page = 1, limit = 20) => {
+    return useQuery({
+      queryKey: dashboardQueryKeys.activities(user?.email || '', page, limit),
+      queryFn: async () => {
+        const response = await callDashboardAPI('activity', 'GET', undefined, {
+          page: page.toString(),
+          limit: limit.toString()
+        });
+        if (response.success) {
+          return response.data;
+        }
+        throw new Error(response.message || 'Failed to fetch activities');
+      },
+      enabled: !!user?.email,
+      staleTime: 1 * 60 * 1000, // 1 minute
+      gcTime: 3 * 60 * 1000, // 3 minutes
+      refetchOnWindowFocus: false,
+    });
+  };
+
+  // Delete file mutation
+  const deleteFileMutation = useMutation({
+    mutationFn: async (fileId: string) => {
+      const response = await callDashboardAPI('delete', 'DELETE', { fileId });
       if (response.success) {
-        setActivities(response.data.activities);
+        return response.data;
       }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch activities');
-    } finally {
-      setLoading(false);
-    }
-  }, [callDashboardAPI]);
-
-  // Delete file
-  const deleteFile = useCallback(async (fileId: string) => {
-    try {
-      setLoading(true);
-      setError(null);
-      
-      const params = new URLSearchParams({
-        endpoint: 'file',
-        fileId: fileId
-      });
-      
-      const response = await fetch(`/api/dashboard?${params.toString()}`, {
-        method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
-      
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to delete file');
-      }
-
-      const data = await response.json();
-      if (data.success) {
-        // Refresh uploads after deletion - pass current parameters
-        await fetchUploads(1, 20);
-        await fetchOverview();
-        await fetchStorage();
-      }
-      return data;
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete file');
-      throw err;
-    } finally {
-      setLoading(false);
-    }
-  }, [fetchUploads, fetchOverview, fetchStorage]);
+      throw new Error(response.message || 'Failed to delete file');
+    },
+    onSuccess: () => {
+      // Invalidate related queries
+      queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.uploads(user?.email || '') });
+      queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.overview(user?.email || '') });
+      queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.storage(user?.email || '') });
+      queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.activities(user?.email || '') });
+    },
+  });
 
   // Log activity
   const logActivity = useCallback(async (type: string, message: string, metadata?: Record<string, unknown>) => {
@@ -286,35 +263,28 @@ export function useDashboard() {
     }
   }, [callDashboardAPI]);
 
-  // Bulk delete files
-  const bulkDeleteFiles = useCallback(async (fileIds: string[]) => {
-    try {
-      setLoading(true);
-      setError(null);
+  // Bulk delete files mutation
+  const bulkDeleteMutation = useMutation({
+    mutationFn: async (fileIds: string[]) => {
       const response = await callDashboardAPI('files/bulk', 'DELETE', { fileIds });
-      
       if (response.success) {
-        // Refresh uploads after deletion - pass current parameters
-        await fetchUploads(1, 20);
-        await fetchOverview();
-        await fetchStorage();
         await logActivity('DELETE', `Bulk deleted ${fileIds.length} files`);
+        return response.data;
       }
-      return response;
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete files');
-      throw err;
-    } finally {
-      setLoading(false);
-    }
-  }, [callDashboardAPI, fetchUploads, fetchOverview, fetchStorage, logActivity]);
+      throw new Error(response.message || 'Failed to delete files');
+    },
+    onSuccess: () => {
+      // Invalidate related queries
+      queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.uploads(user?.email || '') });
+      queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.overview(user?.email || '') });
+      queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.storage(user?.email || '') });
+      queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.activities(user?.email || '') });
+    },
+  });
 
-  // Bulk download files
-  const bulkDownloadFiles = useCallback(async (fileIds: string[]) => {
-    try {
-      setLoading(true);
-      setError(null);
-      
+  // Bulk download files mutation
+  const bulkDownloadMutation = useMutation({
+    mutationFn: async (fileIds: string[]) => {
       if (!user) {
         throw new Error('User not authenticated');
       }
@@ -395,31 +365,23 @@ export function useDashboard() {
       }
       
       return { success: true };
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to download files');
-      throw err;
-    } finally {
-      setLoading(false);
-    }
-  }, [user, logActivity]);
+    },
+  });
 
-  // Fetch duplicate files
-  const fetchDuplicates = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
+  // Duplicates query
+  const duplicatesQuery = useQuery({
+    queryKey: dashboardQueryKeys.duplicates(user?.email || ''),
+    queryFn: async () => {
       const response = await callDashboardAPI('duplicates');
       if (response.success) {
         return response.data;
       }
-      return null;
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch duplicates');
-      throw err;
-    } finally {
-      setLoading(false);
-    }
-  }, [callDashboardAPI]);
+      throw new Error(response.message || 'Failed to find duplicates');
+    },
+    enabled: false, // Only run when explicitly triggered
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    gcTime: 10 * 60 * 1000, // 10 minutes
+  });
 
   // Track analytics event
   const trackEvent = useCallback(async (imageId: string, event: string, metadata?: Record<string, unknown>) => {
@@ -465,30 +427,32 @@ export function useDashboard() {
   };
 
   return {
-    // State
-    loading,
-    error,
-    dashboardStats,
-    uploads,
-    analytics,
-    storageInfo,
-    activities,
+    // Queries
+    overviewQuery,
+    useUploads,
+    useAnalytics,
+    storageQuery,
+    useActivities,
+    duplicatesQuery,
     
-    // Actions
-    fetchOverview,
-    fetchUploads,
-    fetchAnalytics,
-    fetchStorage,
-    fetchActivities,
-    deleteFile,
-    bulkDeleteFiles,
-    bulkDownloadFiles,
-    fetchDuplicates,
-    trackEvent,
-    logActivity,
+    // Mutations
+    deleteFileMutation,
+    bulkDeleteMutation,
+    bulkDownloadMutation,
+    
+    // Legacy state for backward compatibility (will be removed)
+    dashboardStats: overviewQuery.data,
+    storageInfo: storageQuery.data,
+    loading: overviewQuery.isLoading || storageQuery.isLoading,
+    error: overviewQuery.error?.message || storageQuery.error?.message || null,
     
     // Utilities
+    trackEvent,
+    logActivity,
     formatFileSize,
     formatTimeAgo,
+    
+    // Query client for manual invalidation
+    queryClient,
   };
 }

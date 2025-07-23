@@ -52,7 +52,7 @@ export default function ApiKeyAnalytics({ period, onPeriodChange }: ApiKeyAnalyt
   const [rateLimited, setRateLimited] = useState(false);
 
   // Get JWT token from API
-  const getJwtToken = async (): Promise<string> => {
+  const getJwtToken = useCallback(async (): Promise<string> => {
     try {
       const response = await fetch('/api/auth/jwt');
       if (!response.ok) {
@@ -67,15 +67,15 @@ export default function ApiKeyAnalytics({ period, onPeriodChange }: ApiKeyAnalyt
       console.error('Error getting JWT token:', error);
       throw new Error('Failed to get authentication token');
     }
-  };
+  }, []);
 
-  const getAuthHeaders = async () => {
+  const getAuthHeaders = useCallback(async () => {
     const token = await getJwtToken();
     return {
       'Authorization': `Bearer ${token}`,
       'Content-Type': 'application/json'
     };
-  };
+  }, [getJwtToken]);
 
   // Fetch API keys
   const fetchApiKeys = useCallback(async () => {
@@ -148,7 +148,7 @@ export default function ApiKeyAnalytics({ period, onPeriodChange }: ApiKeyAnalyt
     } finally {
       setRefreshing(false);
     }
-  }, [showNotification, period, getAuthHeaders]);
+  }, [period, getAuthHeaders, showNotification]);
 
 
 
@@ -164,7 +164,7 @@ export default function ApiKeyAnalytics({ period, onPeriodChange }: ApiKeyAnalyt
     if (selectedKeyId) {
       fetchAnalytics(selectedKeyId);
     }
-  }, [selectedKeyId, period]); // Removed fetchAnalytics from dependencies to prevent infinite loop
+  }, [selectedKeyId, period, fetchAnalytics]);
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-US', {

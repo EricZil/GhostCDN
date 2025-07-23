@@ -9,27 +9,15 @@ const prisma = require('../lib/prisma');
 
 
 const validateNextAuthJWT = async (req, res, next) => {
-  try {
-    console.log('[JWT Middleware] Starting validation');
-    console.log('[JWT Middleware] Headers:', req.headers);
-    console.log('[JWT Middleware] Body:', req.body);
-    console.log('[JWT Middleware] Query:', req.query);
-    
+  try { 
     const authHeader = req.headers.authorization;
-    console.log('[JWT Middleware] authHeader:', authHeader);
-    console.log('[JWT Middleware] req.body type:', typeof req.body);
-    console.log('[JWT Middleware] req.query type:', typeof req.query);
-    
     let token = null;
     try {
       token = req.body?.token || req.query?.token || (authHeader && authHeader.startsWith('Bearer ') ? authHeader.substring(7) : null);
     } catch (tokenError) {
-      console.error('[JWT Middleware] Error extracting token:', tokenError);
       throw tokenError;
     }
-    
-    console.log('[JWT Middleware] Extracted token:', token ? 'Present' : 'Missing');
-    
+        
     if (!token) {
       return res.status(401).json({
         success: false,
@@ -40,7 +28,6 @@ const validateNextAuthJWT = async (req, res, next) => {
     // Verify the NextAuth token
     const jwtSecret = process.env.NEXTAUTH_SECRET;
     if (!jwtSecret) {
-      console.error('NEXTAUTH_SECRET not configured');
       return res.status(500).json({
         success: false,
         message: 'Server configuration error'

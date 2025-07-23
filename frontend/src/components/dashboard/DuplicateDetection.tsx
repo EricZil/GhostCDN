@@ -38,16 +38,15 @@ export default function DuplicateDetection({ onClose }: DuplicateDetectionProps)
   const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
   const [expandedGroup, setExpandedGroup] = useState<string | null>(null);
   const { user } = useAuth();
-  const { fetchDuplicates, bulkDeleteFiles, formatFileSize, formatTimeAgo } = useDashboard();
+  const { duplicatesQuery, bulkDeleteMutation, formatFileSize, formatTimeAgo } = useDashboard();
   const { showNotification } = useNotification();
 
   const loadDuplicates = useCallback(async () => {
     if (!user?.email) return;
     
-    setLoading(true);
     try {
-      const data = await fetchDuplicates();
-      setDuplicates(data.duplicateGroups || []);
+      await duplicatesQuery.refetch();
+      setDuplicates(duplicatesQuery.data?.duplicateGroups || []);
     } catch {
       showNotification({
         type: 'error',
@@ -55,14 +54,13 @@ export default function DuplicateDetection({ onClose }: DuplicateDetectionProps)
         message: 'Failed to load duplicate files',
         duration: 4000
       });
-    } finally {
-      setLoading(false);
     }
-  }, [user?.email, fetchDuplicates, showNotification]);
+  }, [user?.email, duplicatesQuery, showNotification]);
 
   useEffect(() => {
     loadDuplicates();
-  }, [loadDuplicates]);
+    setLoading(duplicatesQuery.isLoading);
+  }, [loadDuplicates, duplicatesQuery.isLoading]);
 
   const handleFileSelect = (fileId: string, isSelected: boolean) => {
     if (isSelected) {
@@ -90,7 +88,7 @@ export default function DuplicateDetection({ onClose }: DuplicateDetectionProps)
     if (selectedFiles.length === 0) return;
     
     try {
-      await bulkDeleteFiles(selectedFiles);
+      await bulkDeleteMutation.mutateAsync(selectedFiles);
       setSelectedFiles([]);
       await loadDuplicates(); // Refresh the list
       

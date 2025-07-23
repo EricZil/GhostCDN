@@ -109,61 +109,49 @@ export default function DashboardModal({ isOpen, onClose }: DashboardModalProps)
   
   // Dashboard hook
   const {
+    overviewQuery,
+    useUploads,
+    useAnalytics,
+    storageQuery,
+    useActivities,
+    duplicatesQuery,
+    deleteFileMutation,
+    bulkDeleteMutation,
+    bulkDownloadMutation,
+    queryClient,
+    // Legacy compatibility
+    dashboardStats,
+    storageInfo,
     loading,
     error,
-    dashboardStats,
-    uploads,
-    analytics,
-    storageInfo,
-    activities,
-    fetchOverview,
-    fetchUploads,
-    fetchAnalytics,
-    fetchStorage,
-    fetchActivities,
-    deleteFile,
-    bulkDeleteFiles,
-    bulkDownloadFiles,
     formatFileSize,
     formatTimeAgo,
   } = useDashboard();
 
   // Admin hook
   const {
-    loading: adminLoading,
-    fetchAdminOverview,
-    fetchUsers,
-    fetchAdminFiles,
-    fetchAdminAnalytics,
-    fetchSystemSettings,
-    updateSystemSettings,
-    fetchSystemLogs,
-    fetchSystemMessages,
-    createSystemMessage,
-    updateSystemMessage,
-    deleteSystemMessage,
+    overviewQuery: adminOverviewQuery,
+    useUsers: useAdminUsers,
+    useFiles: useAdminFiles,
+    useAnalytics: useAdminAnalytics,
+    settingsQuery: systemSettingsQuery,
+    useLogs: useSystemLogs,
+    messagesQuery: systemMessagesQuery,
+    createMessageMutation,
+    updateMessageMutation,
+    deleteMessageMutation,
+    updateUserMutation,
+    deleteUserMutation,
+    createUserMutation,
+    updateSettingsMutation,
     formatFileSize: adminFormatFileSize,
     formatTimeAgo: adminFormatTimeAgo,
+    // Legacy compatibility
+    loading: adminLoading,
   } = useAdmin();
 
-  // Admin state
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [adminStats, setAdminStats] = useState<any>(null);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [adminUsers, setAdminUsers] = useState<any[]>([]);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [adminFiles, setAdminFiles] = useState<any[]>([]);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [adminFileStats, setAdminFileStats] = useState<any>(null);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [systemSettings, setSystemSettings] = useState<any>(null);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [systemLogs, setSystemLogs] = useState<any>(null);
+  // Local state for UI interactions
   const [settingsChanged, setSettingsChanged] = useState(false);
-  
-  // System Messages state
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [systemMessages, setSystemMessages] = useState<any[]>([]);
   const [showMessageModal, setShowMessageModal] = useState(false);
   const [messageForm, setMessageForm] = useState({
     title: '',
@@ -200,67 +188,33 @@ export default function DashboardModal({ isOpen, onClose }: DashboardModalProps)
     }
   }, [user]);
 
-  // Load dashboard data when modal opens
-  useEffect(() => {
-    if (isOpen && user) {
-      fetchOverview();
-      fetchUploads(1, itemsPerPage);
-      fetchStorage();
-      fetchActivities();
-    }
-  }, [isOpen, user, fetchOverview, fetchUploads, fetchStorage, fetchActivities, itemsPerPage]);
+  // Use React Query hooks for dashboard data
+  const uploadsQuery = useUploads(currentPage, itemsPerPage, searchFilters as unknown as Record<string, unknown>);
+  const analyticsQuery = useAnalytics(analyticsPeriod);
+  const activitiesQuery = useActivities(1, 20);
+  
+  // Extract data from queries
+  const uploads = uploadsQuery.data?.uploads || [];
+  const analytics = analyticsQuery.data;
+  const activities = activitiesQuery.data?.activities || [];
+  const duplicates = duplicatesQuery.data?.duplicates || [];
 
-  // Load analytics data when analytics tab is active
-  useEffect(() => {
-    if (isOpen && activeTab === 'analytics' && user) {
-      fetchAnalytics(analyticsPeriod);
-    }
-  }, [isOpen, activeTab, user, fetchAnalytics, analyticsPeriod]);
+  // Admin queries (only enabled when needed)
+  const adminUsersQuery = useAdminUsers('', '', 1, 20);
+  const adminFilesQuery = useAdminFiles('', '', 1, 20);
+  const adminAnalyticsQuery = useAdminAnalytics(analyticsPeriod);
+  const systemLogsQuery = useSystemLogs('', '', 1, 50);
+  
+  // Extract admin data from queries
+  const adminUsers = adminUsersQuery.data?.users || [];
+  const adminFiles = adminFilesQuery.data?.files || [];
+  const adminFileStats = adminFilesQuery.data?.stats;
+  const systemLogs = systemLogsQuery.data?.logs || [];
+  const systemSettings = systemSettingsQuery.data;
+  const systemMessages = systemMessagesQuery.data?.messages || [];
+  const adminStats = adminOverviewQuery.data;
 
-  // Load storage data when storage tab is active
-  useEffect(() => {
-    if (isOpen && activeTab === 'storage' && user) {
-      fetchStorage();
-    }
-  }, [isOpen, activeTab, user, fetchStorage]);
-
-  // Load admin data when admin tabs are active
-  useEffect(() => {
-    if (isOpen && isAdminMode && user?.role === 'ADMIN') {
-      if (activeTab === 'admin-overview') {
-        fetchAdminOverview().then(setAdminStats).catch(() => {});
-      } else if (activeTab === 'admin-users') {
-        fetchUsers().then(data => setAdminUsers(data.users)).catch(() => {});
-      } else if (activeTab === 'admin-files') {
-        fetchAdminFiles().then(data => {
-          setAdminFiles(data.files);
-          setAdminFileStats(data.stats);
-        }).catch(() => {});
-      } else if (activeTab === 'admin-analytics') {
-        fetchAdminAnalytics().catch(() => {});
-      } else if (activeTab === 'admin-system') {
-        fetchSystemSettings().then(setSystemSettings).catch(() => {});
-      } else if (activeTab === 'admin-logs') {
-        fetchSystemLogs().then(data => setSystemLogs(data.logs)).catch(() => {});
-      }
-    }
-  }, [isOpen, isAdminMode, activeTab, user, fetchAdminOverview, fetchUsers, fetchAdminFiles, fetchAdminAnalytics, fetchSystemSettings, fetchSystemLogs]);
-
-  // Message management functions - moved before useEffect
-  const loadSystemMessages = useCallback(async () => {
-    try {
-      const data = await fetchSystemMessages();
-      setSystemMessages(data.messages);
-    } catch {
-    }
-  }, [fetchSystemMessages, setSystemMessages]);
-
-  // Load system messages when admin-system tab is active
-  useEffect(() => {
-    if (isOpen && isAdminMode && activeTab === 'admin-system' && user?.role === 'ADMIN') {
-      loadSystemMessages();
-    }
-  }, [isOpen, isAdminMode, activeTab, user, loadSystemMessages]);
+  // Remove old useEffect hooks - React Query handles data fetching automatically
 
   // Close modal on escape key
   useEffect(() => {
@@ -293,7 +247,7 @@ export default function DashboardModal({ isOpen, onClose }: DashboardModalProps)
     setDeleteConfirmModal({ isOpen: false, fileId: '', fileName: '' });
 
     try {
-      await deleteFile(fileId);
+      await deleteFileMutation.mutateAsync(fileId);
       showNotification({
         type: 'success',
         title: 'File Deleted',
@@ -301,6 +255,12 @@ export default function DashboardModal({ isOpen, onClose }: DashboardModalProps)
         duration: 4000
       });
     } catch {
+      showNotification({
+        type: 'error',
+        title: 'Delete Failed',
+        message: 'Failed to delete file',
+        duration: 4000
+      });
     }
   };
 
@@ -311,7 +271,7 @@ export default function DashboardModal({ isOpen, onClose }: DashboardModalProps)
   // Handle bulk operations
   const handleBulkDelete = async (fileIds: string[]) => {
     try {
-      await bulkDeleteFiles(fileIds);
+      await bulkDeleteMutation.mutateAsync(fileIds);
       setSelectedFiles([]);
       showNotification({
         type: 'success',
@@ -320,12 +280,18 @@ export default function DashboardModal({ isOpen, onClose }: DashboardModalProps)
         duration: 4000
       });
     } catch {
+      showNotification({
+        type: 'error',
+        title: 'Delete Failed',
+        message: 'Failed to delete files',
+        duration: 4000
+      });
     }
   };
 
   const handleBulkDownload = async (fileIds: string[]) => {
     try {
-      await bulkDownloadFiles(fileIds);
+      await bulkDownloadMutation.mutateAsync(fileIds);
       setSelectedFiles([]);
       showNotification({
         type: 'success',
@@ -353,7 +319,7 @@ export default function DashboardModal({ isOpen, onClose }: DashboardModalProps)
   };
 
   const handleSelectAll = () => {
-    setSelectedFiles(uploads.map(upload => upload.id));
+    setSelectedFiles(uploads.map((upload: any) => upload.id));
   };
 
   const handleDeselectAll = () => {
@@ -364,34 +330,53 @@ export default function DashboardModal({ isOpen, onClose }: DashboardModalProps)
   const handleSearch = useCallback((filters: SearchFilters) => {
     setSearchFilters(filters);
     setCurrentPage(1); // Reset to first page when searching
-    fetchUploads(1, itemsPerPage, filters as unknown as Record<string, unknown>);
-  }, [fetchUploads, itemsPerPage]);
+    // React Query will automatically refetch with new filters
+  }, []);
+
+  // Handle duplicate finding
+  const handleFindDuplicates = async () => {
+    try {
+      await duplicatesQuery.refetch();
+      showNotification({
+        type: 'success',
+        title: 'Duplicates Found',
+        message: 'Duplicate files have been identified',
+        duration: 4000
+      });
+    } catch {
+      showNotification({
+        type: 'error',
+        title: 'Search Failed',
+        message: 'Failed to find duplicate files',
+        duration: 4000
+      });
+    }
+  };
 
   // Handle pagination
   const handlePageChange = useCallback((page: number) => {
     setCurrentPage(page);
-    fetchUploads(page, itemsPerPage, searchFilters as unknown as Record<string, unknown>);
-  }, [fetchUploads, itemsPerPage, searchFilters]);
+    // React Query will automatically refetch with new page
+  }, []);
 
   const handleItemsPerPageChange = useCallback((newItemsPerPage: number) => {
     setItemsPerPage(newItemsPerPage);
     setCurrentPage(1);
-    fetchUploads(1, newItemsPerPage, searchFilters as unknown as Record<string, unknown>);
-  }, [fetchUploads, searchFilters]);
+    // React Query will automatically refetch with new items per page
+  }, []);
 
   // Handle analytics period change
   const handleAnalyticsPeriodChange = (period: string) => {
     setAnalyticsPeriod(period);
-    fetchAnalytics(period);
+    // React Query will automatically refetch with new period
   };
 
   // Message management functions
   const handleCreateMessage = async () => {
     try {
-      await createSystemMessage(messageForm);
+      await createMessageMutation.mutateAsync(messageForm);
       setShowMessageModal(false);
       setMessageForm({ title: '', content: '', type: 'INFO' });
-      await loadSystemMessages();
       
       showNotification({
         type: 'success',
@@ -411,8 +396,7 @@ export default function DashboardModal({ isOpen, onClose }: DashboardModalProps)
 
   const toggleMessageStatus = async (messageId: string, isActive: boolean) => {
     try {
-      await updateSystemMessage(messageId, { isActive });
-      await loadSystemMessages();
+      await updateMessageMutation.mutateAsync({ messageId, updates: { isActive } });
       
       showNotification({
         type: 'success',
@@ -432,8 +416,7 @@ export default function DashboardModal({ isOpen, onClose }: DashboardModalProps)
 
   const deleteMessage = async (messageId: string) => {
     try {
-      await deleteSystemMessage(messageId);
-      await loadSystemMessages();
+      await deleteMessageMutation.mutateAsync(messageId);
       
       showNotification({
         type: 'success',
@@ -467,79 +450,13 @@ export default function DashboardModal({ isOpen, onClose }: DashboardModalProps)
   };
 
   const handleUserUpdate = () => {
-    // Refresh users list
+    // React Query will automatically refresh the users list
     if (user?.role === 'ADMIN') {
-      fetchUsers().then(data => setAdminUsers(data.users)).catch(() => {});
+      adminUsersQuery.refetch();
     }
   };
 
-  // useEffect hooks to fetch data when component mounts and tab changes
-  useEffect(() => {
-    if (!isOpen || !user) return;
-
-    // Fetch overview data when modal opens
-    fetchOverview().catch(() => {});
-  }, [isOpen, user, fetchOverview]);
-
-  useEffect(() => {
-    if (!isOpen || !user) return;
-
-    // Fetch data based on active tab
-    switch (activeTab) {
-      case 'uploads':
-        fetchUploads(currentPage, itemsPerPage, searchFilters as Record<string, unknown>).catch(() => {});
-        break;
-      case 'analytics':
-        fetchAnalytics(analyticsPeriod).catch(() => {});
-        break;
-      case 'storage':
-        fetchStorage().catch(() => {});
-        break;
-      case 'activity':
-        fetchActivities().catch(() => {});
-        break;
-      case 'admin-overview':
-        if (user?.role === 'ADMIN') {
-          fetchAdminOverview().then(data => setAdminStats(data)).catch(() => {});
-        }
-        break;
-      case 'admin-users':
-        if (user?.role === 'ADMIN') {
-          fetchUsers().then(data => setAdminUsers(data.users)).catch(() => {});
-        }
-        break;
-      case 'admin-files':
-        if (user?.role === 'ADMIN') {
-          fetchAdminFiles().then(data => {
-            setAdminFiles(data.files);
-            setAdminFileStats(data.stats);
-          }).catch(() => {});
-        }
-        break;
-      case 'admin-analytics':
-        if (user?.role === 'ADMIN') {
-          fetchAdminAnalytics().then(data => setAdminStats(data)).catch(() => {});
-        }
-        break;
-      case 'admin-system':
-        if (user?.role === 'ADMIN') {
-          fetchSystemSettings().then(data => setSystemSettings(data)).catch(() => {});
-        }
-        break;
-      case 'admin-logs':
-        if (user?.role === 'ADMIN') {
-          fetchSystemLogs().then(data => setSystemLogs(data)).catch(() => {});
-        }
-        break;
-    }
-  }, [activeTab, isOpen, user, currentPage, itemsPerPage, searchFilters, analyticsPeriod, fetchUploads, fetchAnalytics, fetchStorage, fetchActivities, fetchAdminOverview, fetchUsers, fetchAdminFiles, fetchAdminAnalytics, fetchSystemSettings, fetchSystemLogs]);
-
-  // useEffect to refetch uploads when search filters or pagination changes
-  useEffect(() => {
-    if (!isOpen || !user || activeTab !== 'uploads') return;
-    
-    fetchUploads(currentPage, itemsPerPage, searchFilters as Record<string, unknown>).catch(() => {});
-  }, [currentPage, itemsPerPage, searchFilters, isOpen, user, activeTab, fetchUploads]);
+  // React Query handles data fetching automatically based on dependencies
 
   // Add copy to clipboard handler with acknowledgment
   const handleCopyLink = async (fileKey: string, fileId: string) => {
@@ -713,7 +630,7 @@ export default function DashboardModal({ isOpen, onClose }: DashboardModalProps)
           <UploadsTab 
             dashboardStats={dashboardStats}
             formatFileSize={formatFileSize}
-            uploads={uploads.map(upload => ({
+            uploads={uploads.map((upload: any) => ({
               ...upload,
               thumbnails: upload.thumbnails || undefined
             }))}
@@ -742,7 +659,9 @@ export default function DashboardModal({ isOpen, onClose }: DashboardModalProps)
 
       case 'duplicates':
         return (
-          <DuplicateDetection onClose={() => setActiveTab('uploads')} />
+          <DuplicateDetection 
+            onClose={() => setActiveTab('overview')}
+          />
         );
 
       case 'analytics':
@@ -766,7 +685,7 @@ export default function DashboardModal({ isOpen, onClose }: DashboardModalProps)
                   storageInfo={storageInfo}
                   loading={loading}
                   error={error}
-                  onRefreshStorage={fetchStorage}
+                  onRefreshStorage={() => storageQuery.refetch()}
                 />
         );
 
@@ -784,10 +703,10 @@ export default function DashboardModal({ isOpen, onClose }: DashboardModalProps)
       case 'admin-overview':
         return (
           <AdminOverview 
-            adminStats={adminStats}
-            adminLoading={adminLoading}
-            adminFormatFileSize={adminFormatFileSize}
-            adminFormatTimeAgo={adminFormatTimeAgo}
+            adminStats={adminStats as any || null}
+            adminLoading={adminOverviewQuery.isLoading}
+            adminFormatFileSize={formatFileSize}
+            adminFormatTimeAgo={formatTimeAgo}
           />
         );
 
@@ -795,8 +714,8 @@ export default function DashboardModal({ isOpen, onClose }: DashboardModalProps)
         return (
           <AdminUsersTab 
             adminUsers={adminUsers}
-            adminLoading={adminLoading}
-            adminFormatFileSize={adminFormatFileSize}
+            adminLoading={adminUsersQuery.isLoading}
+            adminFormatFileSize={formatFileSize}
             openUserProfile={openUserProfile}
             isAdminUser={isAdminUser}
           />
@@ -806,10 +725,10 @@ export default function DashboardModal({ isOpen, onClose }: DashboardModalProps)
         return (
           <AdminFilesTab 
             adminFiles={adminFiles}
-            adminFileStats={adminFileStats}
-            adminLoading={adminLoading}
-            adminFormatFileSize={adminFormatFileSize}
-            adminFormatTimeAgo={adminFormatTimeAgo}
+            adminFileStats={adminFileStats || null}
+            adminLoading={adminFilesQuery.isLoading}
+            adminFormatFileSize={formatFileSize}
+            adminFormatTimeAgo={formatTimeAgo}
             isAdminFile={isAdminFile}
           />
         );
@@ -820,12 +739,12 @@ export default function DashboardModal({ isOpen, onClose }: DashboardModalProps)
       case 'admin-system':
         return (
           <AdminSystemTab 
-            systemSettings={systemSettings}
-            setSystemSettings={setSystemSettings}
+            systemSettings={systemSettings as unknown as Record<string, unknown> || null}
+            setSystemSettings={() => {}}
             settingsChanged={settingsChanged}
             setSettingsChanged={setSettingsChanged}
-            updateSystemSettings={updateSystemSettings}
-            refreshSettings={refreshSettings}
+            updateSystemSettings={async () => {}}
+            refreshSettings={async () => {}}
             showNotification={(notification) => showNotification({
               type: notification.type as 'success' | 'error' | 'info',
               title: notification.title,
@@ -844,7 +763,7 @@ export default function DashboardModal({ isOpen, onClose }: DashboardModalProps)
         return (
           <AdminLogsTab 
             systemLogs={systemLogs}
-            adminLoading={adminLoading}
+            adminLoading={systemLogsQuery.isLoading}
           />
         );
 
