@@ -291,18 +291,26 @@ export default function ApiKeysTab() {
             <div key={key.id} className="bg-gradient-to-r from-gray-900/50 to-gray-800/50 rounded-xl border border-gray-700/50 p-6">
               <div className="flex items-start justify-between">
                 <div className="flex-1">
-                  <div className="flex items-center space-x-3 mb-3">
-                    <h4 className="text-lg font-medium text-white">{key.name}</h4>
-                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                      key.isActive 
-                        ? 'bg-green-500/20 text-green-400 border border-green-500/30'
-                        : 'bg-red-500/20 text-red-400 border border-red-500/30'
-                    }`}>
-                      {key.isActive ? 'Active' : 'Inactive'}
-                    </span>
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center space-x-3">
+                      <h4 className="text-lg font-medium text-white">{key.name}</h4>
+                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                        key.isActive 
+                          ? 'bg-green-500/20 text-green-400 border border-green-500/30'
+                          : 'bg-red-500/20 text-red-400 border border-red-500/30'
+                      }`}>
+                        {key.isActive ? 'Active' : 'Inactive'}
+                      </span>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <span className="text-xs text-gray-500">ID:</span>
+                      <code className="text-xs text-gray-400 bg-gray-800/50 px-2 py-1 rounded font-mono">
+                        {key.id.slice(0, 8)}...{key.id.slice(-4)}
+                      </code>
+                    </div>
                   </div>
                   
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm mb-3">
                     <div>
                       <span className="text-gray-400">Created:</span>
                       <span className="text-white ml-2">{formatDate(key.createdAt)}</span>
@@ -314,8 +322,14 @@ export default function ApiKeysTab() {
                       </span>
                     </div>
                     <div>
-                      <span className="text-gray-400">Usage:</span>
-                      <span className="text-white ml-2">{(key.usageCount || 0).toLocaleString()} requests</span>
+                      <span className="text-gray-400">Total Requests:</span>
+                      <span className="text-white ml-2">{(key.usageCount || 0).toLocaleString()}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-400">Expires:</span>
+                      <span className="text-white ml-2">
+                        {key.expiresAt ? formatDate(key.expiresAt) : 'Never'}
+                      </span>
                     </div>
                   </div>
 

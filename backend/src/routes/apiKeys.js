@@ -325,9 +325,34 @@ router.get('/:keyId/usage', validateNextAuthJWT, apiKeyRateLimit, async (req, re
       throw error;
     }
 
+    // Convert BigInt values to numbers for JSON serialization
+    const serializedUsage = {
+      ...usage,
+      totalRequests: typeof usage.totalRequests === 'bigint' ? Number(usage.totalRequests) : usage.totalRequests,
+      successfulRequests: typeof usage.successfulRequests === 'bigint' ? Number(usage.successfulRequests) : usage.successfulRequests,
+      failedRequests: typeof usage.failedRequests === 'bigint' ? Number(usage.failedRequests) : usage.failedRequests,
+      rateLimitHits: typeof usage.rateLimitHits === 'bigint' ? Number(usage.rateLimitHits) : usage.rateLimitHits,
+      uniqueIPs: typeof usage.uniqueIPs === 'bigint' ? Number(usage.uniqueIPs) : usage.uniqueIPs,
+      averageResponseTime: typeof usage.averageResponseTime === 'bigint' ? Number(usage.averageResponseTime) : usage.averageResponseTime,
+      dailyUsage: usage.dailyUsage?.map(day => ({
+        ...day,
+        requests: typeof day.requests === 'bigint' ? Number(day.requests) : day.requests,
+        avgResponseTime: typeof day.avgResponseTime === 'bigint' ? Number(day.avgResponseTime) : day.avgResponseTime
+      })) || [],
+      statusCodes: usage.statusCodes?.map(status => ({
+        ...status,
+        count: typeof status.count === 'bigint' ? Number(status.count) : status.count
+      })) || [],
+      topEndpoints: usage.topEndpoints?.map(endpoint => ({
+        ...endpoint,
+        requests: typeof endpoint.requests === 'bigint' ? Number(endpoint.requests) : endpoint.requests,
+        avgResponseTime: typeof endpoint.avgResponseTime === 'bigint' ? Number(endpoint.avgResponseTime) : endpoint.avgResponseTime
+      })) || []
+    };
+
     res.json({
       success: true,
-      data: usage
+      data: serializedUsage
     });
   } catch (error) {
     console.error('[API Keys] Error fetching usage:', error);

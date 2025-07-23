@@ -383,12 +383,44 @@ class ApiKeyService {
     }
 
     // Get usage statistics
-    const [totalRequests, recentUsage, statusCodes, topEndpoints] = await Promise.all([
+    const [totalRequests, successfulRequests, failedRequests, rateLimitHits, recentUsage, statusCodes, topEndpoints, uniqueIPs, avgResponseTime] = await Promise.all([
       // Total requests
       prisma.apiKeyUsage.count({
         where: {
           apiKeyId,
           timestamp: { gte: startDate }
+        }
+      }),
+
+      // Successful requests (2xx status codes)
+      prisma.apiKeyUsage.count({
+        where: {
+          apiKeyId,
+          timestamp: { gte: startDate },
+          statusCode: {
+            gte: 200,
+            lt: 300
+          }
+        }
+      }),
+
+      // Failed requests (4xx and 5xx status codes)
+      prisma.apiKeyUsage.count({
+        where: {
+          apiKeyId,
+          timestamp: { gte: startDate },
+          statusCode: {
+            gte: 400
+          }
+        }
+      }),
+
+      // Rate limit hits (429 status code)
+      prisma.apiKeyUsage.count({
+        where: {
+          apiKeyId,
+          timestamp: { gte: startDate },
+          statusCode: 429
         }
       }),
 
@@ -429,11 +461,32 @@ class ApiKeyService {
         GROUP BY endpoint
         ORDER BY requests DESC
         LIMIT 10
+      `,
+
+      // Unique IP addresses
+      prisma.$queryRaw`
+        SELECT COUNT(DISTINCT ipAddress) as count
+        FROM ApiKeyUsage 
+        WHERE apiKeyId = ${apiKeyId} 
+          AND timestamp >= ${startDate}
+      `,
+
+      // Average response time
+      prisma.$queryRaw`
+        SELECT AVG(responseTime) as avgTime
+        FROM ApiKeyUsage 
+        WHERE apiKeyId = ${apiKeyId} 
+          AND timestamp >= ${startDate}
       `
     ]);
 
     return {
       totalRequests,
+      successfulRequests,
+      failedRequests,
+      rateLimitHits,
+      uniqueIPs: uniqueIPs[0]?.count || 0,
+      averageResponseTime: avgResponseTime[0]?.avgTime || 0,
       dailyUsage: recentUsage,
       statusCodes,
       topEndpoints,

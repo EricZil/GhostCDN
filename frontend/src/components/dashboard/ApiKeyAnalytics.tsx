@@ -50,9 +50,26 @@ export default function ApiKeyAnalytics({ period, onPeriodChange }: ApiKeyAnalyt
   const [analytics, setAnalytics] = useState<ApiKeyStats | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
-  // Get JWT token from session
-  const getAuthHeaders = () => {
-    const token = (session as { token?: string; accessToken?: string })?.token || (session as { token?: string; accessToken?: string })?.accessToken;
+  // Get JWT token from API
+  const getJwtToken = async (): Promise<string> => {
+    try {
+      const response = await fetch('/api/auth/jwt');
+      if (!response.ok) {
+        throw new Error('Failed to get JWT token');
+      }
+      const data = await response.json();
+      if (!data.success || !data.token) {
+        throw new Error('Invalid JWT response');
+      }
+      return data.token;
+    } catch (error) {
+      console.error('Error getting JWT token:', error);
+      throw new Error('Failed to get authentication token');
+    }
+  };
+
+  const getAuthHeaders = async () => {
+    const token = await getJwtToken();
     return {
       'Authorization': `Bearer ${token}`,
       'Content-Type': 'application/json'
@@ -62,8 +79,14 @@ export default function ApiKeyAnalytics({ period, onPeriodChange }: ApiKeyAnalyt
   // Fetch API keys
   const fetchApiKeys = useCallback(async () => {
     try {
-      const response = await fetch('/api/keys', {
-        headers: getAuthHeaders()
+      const headers = await getAuthHeaders();
+      const response = await fetch('/api/proxy', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          endpoint: 'keys',
+          method: 'GET'
+        })
       });
 
       if (response.ok) {
@@ -79,7 +102,7 @@ export default function ApiKeyAnalytics({ period, onPeriodChange }: ApiKeyAnalyt
     } catch (error) {
       console.error('Error fetching API keys:', error);
     }
-  }, [selectedKeyId]);
+  }, [selectedKeyId, getAuthHeaders]);
 
   // Fetch analytics for selected key
   const fetchAnalytics = useCallback(async (keyId: string) => {
@@ -88,8 +111,14 @@ export default function ApiKeyAnalytics({ period, onPeriodChange }: ApiKeyAnalyt
     try {
       setRefreshing(true);
       const days = period === '24h' ? 1 : period === '7d' ? 7 : period === '30d' ? 30 : 90;
-      const response = await fetch(`/api/keys/${keyId}/usage?days=${days}`, {
-        headers: getAuthHeaders()
+      const headers = await getAuthHeaders();
+      const response = await fetch('/api/proxy', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          endpoint: `keys/${keyId}/usage?days=${days}`,
+          method: 'GET'
+        })
       });
 
       if (response.ok) {
@@ -109,7 +138,7 @@ export default function ApiKeyAnalytics({ period, onPeriodChange }: ApiKeyAnalyt
     } finally {
       setRefreshing(false);
     }
-  }, [showNotification, period]);
+  }, [showNotification, period, getAuthHeaders]);
 
   // Auto-refresh analytics every 30 seconds
   useEffect(() => {
@@ -143,9 +172,12 @@ export default function ApiKeyAnalytics({ period, onPeriodChange }: ApiKeyAnalyt
     });
   };
 
-  const getSuccessRate = () => {
-    if (!analytics || analytics.totalRequests === 0) return 0;
-    return ((analytics.successfulRequests / analytics.totalRequests) * 100).toFixed(1);
+  const getSuccessRate = (analytics: ApiKeyStats | null) => {
+    if (!analytics || !analytics.totalRequests || analytics.totalRequests === 0) {
+      return '0.0';
+    }
+    
+    return (((analytics.successfulRequests || 0) / analytics.totalRequests) * 100).toFixed(1);
   };
 
   if (loading) {
@@ -192,7 +224,7 @@ export default function ApiKeyAnalytics({ period, onPeriodChange }: ApiKeyAnalyt
           >
             {apiKeys.map((key) => (
               <option key={key.id} value={key.id}>
-                {key.name} ({key.usageCount.toLocaleString()} requests)
+                {key.name} ({(key.usageCount || 0).toLocaleString()} requests)
               </option>
             ))}
           </select>
@@ -232,11 +264,11 @@ export default function ApiKeyAnalytics({ period, onPeriodChange }: ApiKeyAnalyt
               className="bg-gradient-to-r from-blue-500/10 to-blue-600/10 rounded-xl p-6 border border-blue-500/30"
             >
               <div className="text-3xl font-bold text-white mb-1">
-                {analytics.totalRequests.toLocaleString()}
+                {(analytics.totalRequests || 0).toLocaleString()}
               </div>
               <div className="text-sm text-blue-400">Total Requests</div>
               <div className="text-xs text-gray-400 mt-1">
-                {analytics.uniqueIPs} unique IPs
+                {analytics.uniqueIPs || 0} unique IPs
               </div>
             </motion.div>
 
@@ -247,11 +279,11 @@ export default function ApiKeyAnalytics({ period, onPeriodChange }: ApiKeyAnalyt
               className="bg-gradient-to-r from-green-500/10 to-green-600/10 rounded-xl p-6 border border-green-500/30"
             >
               <div className="text-3xl font-bold text-white mb-1">
-                {getSuccessRate()}%
+                {getSuccessRate(analytics)}%
               </div>
               <div className="text-sm text-green-400">Success Rate</div>
               <div className="text-xs text-gray-400 mt-1">
-                {analytics.successfulRequests.toLocaleString()} successful
+                {(analytics.successfulRequests || 0).toLocaleString()} successful
               </div>
             </motion.div>
 
@@ -262,7 +294,7 @@ export default function ApiKeyAnalytics({ period, onPeriodChange }: ApiKeyAnalyt
               className="bg-gradient-to-r from-purple-500/10 to-purple-600/10 rounded-xl p-6 border border-purple-500/30"
             >
               <div className="text-3xl font-bold text-white mb-1">
-                {Math.round(analytics.averageResponseTime)}ms
+                {Math.round(analytics.averageResponseTime || 0)}ms
               </div>
               <div className="text-sm text-purple-400">Avg Response Time</div>
               <div className="text-xs text-gray-400 mt-1">
@@ -277,11 +309,11 @@ export default function ApiKeyAnalytics({ period, onPeriodChange }: ApiKeyAnalyt
               className="bg-gradient-to-r from-red-500/10 to-red-600/10 rounded-xl p-6 border border-red-500/30"
             >
               <div className="text-3xl font-bold text-white mb-1">
-                {analytics.rateLimitHits.toLocaleString()}
+                {(analytics.rateLimitHits || 0).toLocaleString()}
               </div>
               <div className="text-sm text-red-400">Rate Limit Hits</div>
               <div className="text-xs text-gray-400 mt-1">
-                {analytics.failedRequests.toLocaleString()} failed total
+                {(analytics.failedRequests || 0).toLocaleString()} failed total
               </div>
             </motion.div>
           </div>
@@ -292,7 +324,7 @@ export default function ApiKeyAnalytics({ period, onPeriodChange }: ApiKeyAnalyt
             <div className="bg-black/30 rounded-xl p-6 border border-gray-700/50">
               <h4 className="text-lg font-medium text-white mb-4">Daily Usage Trend</h4>
               <div className="space-y-3">
-                {analytics.dailyUsage.slice(-7).map((day) => (
+                {(analytics.dailyUsage || []).slice(-7).map((day) => (
                   <div key={day.date} className="flex items-center justify-between">
                     <span className="text-sm text-gray-400 w-16">
                       {formatDate(day.date)}
@@ -302,16 +334,16 @@ export default function ApiKeyAnalytics({ period, onPeriodChange }: ApiKeyAnalyt
                         <div 
                           className="bg-gradient-to-r from-purple-500 to-pink-500 h-2 rounded-full transition-all duration-500"
                           style={{ 
-                            width: `${Math.min(100, (day.requests / Math.max(...analytics.dailyUsage.map(d => d.requests))) * 100)}%` 
+                            width: `${Math.min(100, (day.requests / Math.max(1, ...((analytics.dailyUsage || []).map(d => d.requests || 0)))) * 100)}%` 
                           }}
                         />
                       </div>
                       <span className="text-sm text-white w-12 text-right">
-                        {day.requests}
+                        {day.requests || 0}
                       </span>
                     </div>
                     <span className="text-xs text-gray-500 w-12 text-right">
-                      {Math.round(day.avgResponseTime)}ms
+                      {Math.round(day.avgResponseTime || 0)}ms
                     </span>
                   </div>
                 ))}
@@ -322,7 +354,7 @@ export default function ApiKeyAnalytics({ period, onPeriodChange }: ApiKeyAnalyt
             <div className="bg-black/30 rounded-xl p-6 border border-gray-700/50">
               <h4 className="text-lg font-medium text-white mb-4">Response Status Codes</h4>
               <div className="space-y-3">
-                {analytics.statusCodes.map((status) => (
+                {(analytics.statusCodes || []).map((status) => (
                   <div key={status.statusCode} className="flex items-center justify-between">
                     <span className={`text-sm font-medium w-12 ${
                       status.statusCode >= 200 && status.statusCode < 300 ? 'text-green-400' :
@@ -340,16 +372,16 @@ export default function ApiKeyAnalytics({ period, onPeriodChange }: ApiKeyAnalyt
                             status.statusCode >= 500 ? 'bg-red-500' : 'bg-gray-500'
                           }`}
                           style={{ 
-                            width: `${Math.min(100, (status.count / analytics.totalRequests) * 100)}%` 
+                            width: `${Math.min(100, ((status.count || 0) / (analytics.totalRequests || 1)) * 100)}%` 
                           }}
                         />
                       </div>
                       <span className="text-sm text-white w-16 text-right">
-                        {status.count.toLocaleString()}
+                        {(status.count || 0).toLocaleString()}
                       </span>
                     </div>
                     <span className="text-xs text-gray-500 w-12 text-right">
-                      {((status.count / analytics.totalRequests) * 100).toFixed(1)}%
+                      {(((status.count || 0) / (analytics.totalRequests || 1)) * 100).toFixed(1)}%
                     </span>
                   </div>
                 ))}
@@ -361,7 +393,7 @@ export default function ApiKeyAnalytics({ period, onPeriodChange }: ApiKeyAnalyt
           <div className="bg-black/30 rounded-xl p-6 border border-gray-700/50">
             <h4 className="text-lg font-medium text-white mb-4">Top API Endpoints</h4>
             <div className="space-y-3">
-              {analytics.topEndpoints.map((endpoint, index) => (
+              {(analytics.topEndpoints || []).map((endpoint, index) => (
                 <div key={endpoint.endpoint} className="flex items-center justify-between p-4 bg-black/20 rounded-lg">
                   <div className="flex items-center space-x-4 flex-1">
                     <span className="text-xs bg-purple-500/20 text-purple-400 px-2 py-1 rounded w-8 text-center">
@@ -374,13 +406,13 @@ export default function ApiKeyAnalytics({ period, onPeriodChange }: ApiKeyAnalyt
                   <div className="flex items-center space-x-6 text-sm">
                     <div className="text-center">
                       <div className="text-white font-medium">
-                        {endpoint.requests.toLocaleString()}
+                        {(endpoint.requests || 0).toLocaleString()}
                       </div>
                       <div className="text-gray-400 text-xs">requests</div>
                     </div>
                     <div className="text-center">
                       <div className="text-white font-medium">
-                        {Math.round(endpoint.avgResponseTime)}ms
+                        {Math.round(endpoint.avgResponseTime || 0)}ms
                       </div>
                       <div className="text-gray-400 text-xs">avg time</div>
                     </div>

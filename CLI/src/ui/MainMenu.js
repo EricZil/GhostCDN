@@ -54,11 +54,10 @@ class MainMenu {
 ██║   ██║██╔══██║██║   ██║╚════██║   ██║   ██║     ██║  ██║██║╚██╗██║
 ╚██████╔╝██║  ██║╚██████╔╝███████║   ██║   ╚██████╗██████╔╝██║ ╚████║
  ╚═════╝ ╚═╝  ╚═╝ ╚═════╝ ╚══════╝   ╚═╝    ╚═════╝╚═════╝ ╚═╝  ╚═══╝
-                                CLI
     `;
     
     console.log(chalk.cyan(banner));
-    console.log(chalk.dim('Simple file upload tool - Manage everything else in the web dashboard\n'));
+    console.log(chalk.dim('Simple file upload tool for GhostCDN - Manage everything else in the web dashboard\n'));
   }
 
   /**
