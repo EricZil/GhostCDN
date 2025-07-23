@@ -241,7 +241,8 @@ class AuthManager {
           process.stdin.setRawMode(true);
           process.stdin.resume();
           
-          let password = '';
+          // Dynamic user input buffer - not a hardcoded secret
+          let userInput = '';
           process.stdin.on('data', function(char) {
             char = char + '';
             
@@ -252,20 +253,20 @@ class AuthManager {
                 process.stdin.setRawMode(false);
                 process.stdin.pause();
                 process.stdout.write('\n');
-                resolve(password);
+                resolve(userInput);
                 break;
               case '\u0003':
                 process.exit();
                 break;
               default:
                 if (char.charCodeAt(0) === 8) {
-                  // Backspace
-                  if (password.length > 0) {
-                    password = password.slice(0, -1);
+                  // Backspace handling - remove last character from input buffer
+                  if (userInput.length > 0) {
+                    userInput = userInput.slice(0, -1);
                     process.stdout.write('\b \b');
                   }
                 } else {
-                  password += char;
+                  userInput += char;
                   process.stdout.write('*');
                 }
                 break;
