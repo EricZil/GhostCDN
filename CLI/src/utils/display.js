@@ -1,4 +1,15 @@
-const chalk = require('chalk');
+// Simple color functions to replace chalk
+const colors = {
+  red: (text) => `\x1b[31m${text}\x1b[0m`,
+  yellow: (text) => `\x1b[33m${text}\x1b[0m`,
+  cyan: (text) => `\x1b[36m${text}\x1b[0m`,
+  dim: (text) => `\x1b[2m${text}\x1b[0m`,
+  green: (text) => `\x1b[32m${text}\x1b[0m`,
+  blue: (text) => `\x1b[34m${text}\x1b[0m`,
+  white: (text) => `\x1b[37m${text}\x1b[0m`,
+  magenta: (text) => `\x1b[35m${text}\x1b[0m`
+};
+const chalk = colors;
 
 /**
  * Clear the terminal screen
@@ -38,12 +49,32 @@ function showWelcome() {
  * Show loading spinner with custom text
  */
 function showSpinner(text = 'Loading...') {
-  const ora = require('ora');
-  return ora({
-    text: chalk.cyan(text),
-    spinner: 'dots',
-    color: 'cyan'
-  });
+  const frames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+  let i = 0;
+  let interval;
+  
+  return {
+    start: () => {
+      process.stdout.write(`${frames[0]} ${chalk.cyan(text)}`);
+      interval = setInterval(() => {
+        process.stdout.write(`\r${frames[i]} ${chalk.cyan(text)}`);
+        i = (i + 1) % frames.length;
+      }, 80);
+      return this;
+    },
+    succeed: (message) => {
+      clearInterval(interval);
+      process.stdout.write(`\r✅ ${message || text}\n`);
+    },
+    fail: (message) => {
+      clearInterval(interval);
+      process.stdout.write(`\r❌ ${message || text}\n`);
+    },
+    stop: () => {
+      clearInterval(interval);
+      process.stdout.write('\r');
+    }
+  };
 }
 
 /**
@@ -318,36 +349,45 @@ function showKeyValue(data, options = {}) {
  * Show confirmation prompt
  */
 async function showConfirmation(message, defaultValue = false) {
-  const inquirer = require('inquirer');
+  const readline = require('readline');
   
-  const answer = await inquirer.prompt([
-    {
-      type: 'confirm',
-      name: 'confirmed',
-      message: message,
-      default: defaultValue
-    }
-  ]);
-
-  return answer.confirmed;
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout
+  });
+  
+  return new Promise((resolve) => {
+    const defaultText = defaultValue ? ' (Y/n)' : ' (y/N)';
+    rl.question(message + defaultText + ': ', (answer) => {
+      rl.close();
+      const normalized = answer.toLowerCase().trim();
+      if (normalized === '') {
+        resolve(defaultValue);
+      } else {
+        resolve(normalized === 'y' || normalized === 'yes');
+      }
+    });
+  });
 }
 
 /**
  * Show input prompt
  */
 async function showInput(message, options = {}) {
-  const inquirer = require('inquirer');
+  const readline = require('readline');
   
-  const defaultOptions = {
-    type: 'input',
-    name: 'value',
-    message: message
-  };
-
-  const promptOptions = { ...defaultOptions, ...options };
-  const answer = await inquirer.prompt([promptOptions]);
-
-  return answer.value;
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout
+  });
+  
+  return new Promise((resolve) => {
+    const promptText = options.default ? `${message} (${options.default}): ` : `${message}: `;
+    rl.question(promptText, (answer) => {
+      rl.close();
+      resolve(answer.trim() || options.default || '');
+    });
+  });
 }
 
 module.exports = {

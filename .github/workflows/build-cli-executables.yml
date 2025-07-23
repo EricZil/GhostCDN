@@ -353,10 +353,12 @@ jobs:
           
           This release includes the following improvements:
           
-          - Enhanced security with proper credential encryption
-          - Improved error handling and user experience
-          - Path sanitization for secure file operations
-          - Configurable API endpoints for different environments
+          - **Fixed all dependency issues**: Resolved ora, inquirer, and chalk compatibility problems
+          - **Replaced inquirer with readline**: All menu interactions now use native readline for better compatibility
+          - **Custom spinner implementation**: Replaced ora with custom console-based spinner
+          - **Fixed color display**: Resolved chalk.cyan.bold errors with proper color implementation
+          - **Fully functional standalone executable**: No external dependency errors, clean user interface
+          - **Enhanced error handling**: Better error messages and user experience
           
           ## 📦 Downloads
           

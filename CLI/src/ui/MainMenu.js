@@ -1,5 +1,16 @@
-const inquirer = require('inquirer');
-const chalk = require('chalk');
+const readline = require('readline');
+// Simple color functions to replace chalk
+const colors = {
+  red: (text) => `\x1b[31m${text}\x1b[0m`,
+  yellow: (text) => `\x1b[33m${text}\x1b[0m`,
+  cyan: (text) => `\x1b[36m${text}\x1b[0m`,
+  dim: (text) => `\x1b[2m${text}\x1b[0m`,
+  green: (text) => `\x1b[32m${text}\x1b[0m`,
+  blue: (text) => `\x1b[34m${text}\x1b[0m`,
+  white: (text) => `\x1b[37m${text}\x1b[0m`,
+  magenta: (text) => `\x1b[35m${text}\x1b[0m`
+};
+const chalk = colors;
 
 const { showError, showSuccess, showInfo, showWarning } = require('../utils/display');
 const { openUrl } = require('../utils/openUrl');
@@ -88,53 +99,35 @@ class MainMenu {
    * Show simplified menu options focused on upload
    */
   async showMenuOptions() {
-    const menuChoices = [
-      {
-        name: `📤 Upload Files`,
-        value: 'upload',
-        short: 'Upload Files'
-      },
-      new inquirer.Separator(),
-      {
-        name: `⚙️  Settings`,
-        value: 'settings',
-        short: 'Settings'
-      },
-      {
-        name: `🌐 Open Web Dashboard`,
-        value: 'dashboard',
-        short: 'Web Dashboard'
-      },
-      {
-        name: `📚 View Documentation`,
-        value: 'docs',
-        short: 'Documentation'
-      },
-      new inquirer.Separator(),
-      {
-        name: `🚪 Logout`,
-        value: 'logout',
-        short: 'Logout'
-      },
-      {
-        name: `❌ Exit`,
-        value: 'exit',
-        short: 'Exit'
-      }
-    ];
+    console.log(chalk.cyan('What would you like to do?\n'));
+    console.log('1. 📤 Upload Files');
+    console.log('2. ⚙️  Settings');
+    console.log('3. 🌐 Open Web Dashboard');
+    console.log('4. 📚 View Documentation');
+    console.log('5. 🚪 Logout');
+    console.log('6. ❌ Exit');
+    console.log();
 
-    const answer = await inquirer.prompt([
-      {
-        type: 'list',
-        name: 'choice',
-        message: 'What would you like to do?',
-        choices: menuChoices,
-        pageSize: 8,
-        loop: false
-      }
-    ]);
+    const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout
+    });
 
-    return answer.choice;
+    return new Promise((resolve) => {
+      rl.question('Enter your choice (1-6): ', (answer) => {
+        rl.close();
+        const choice = parseInt(answer.trim());
+        switch (choice) {
+          case 1: resolve('upload'); break;
+          case 2: resolve('settings'); break;
+          case 3: resolve('dashboard'); break;
+          case 4: resolve('docs'); break;
+          case 5: resolve('logout'); break;
+          case 6: resolve('exit'); break;
+          default: resolve('invalid'); break;
+        }
+      });
+    });
   }
 
   /**
@@ -166,8 +159,9 @@ class MainMenu {
         await this.handleExit();
         return; // Don't return to menu after exit
         
+      case 'invalid':
       default:
-        showWarning('Invalid option selected');
+        showWarning('Invalid option selected. Please enter a number between 1-6.');
     }
     
     // Return to main menu after completing action
@@ -204,16 +198,19 @@ class MainMenu {
    */
   async handleLogout() {
     try {
-      const confirmed = await inquirer.prompt([
-        {
-          type: 'confirm',
-          name: 'logout',
-          message: 'Are you sure you want to logout?',
-          default: false
-        }
-      ]);
+      const rl = readline.createInterface({
+        input: process.stdin,
+        output: process.stdout
+      });
 
-      if (confirmed.logout) {
+      const confirmed = await new Promise((resolve) => {
+        rl.question('Are you sure you want to logout? (y/N): ', (answer) => {
+          rl.close();
+          resolve(answer.toLowerCase().trim() === 'y' || answer.toLowerCase().trim() === 'yes');
+        });
+      });
+
+      if (confirmed) {
         await this.authManager.logout();
         showSuccess('Logged out successfully');
         
@@ -230,16 +227,20 @@ class MainMenu {
    */
   async handleExit() {
     try {
-      const confirmed = await inquirer.prompt([
-        {
-          type: 'confirm',
-          name: 'exit',
-          message: 'Are you sure you want to exit?',
-          default: true
-        }
-      ]);
+      const rl = readline.createInterface({
+        input: process.stdin,
+        output: process.stdout
+      });
 
-      if (confirmed.exit) {
+      const confirmed = await new Promise((resolve) => {
+        rl.question('Are you sure you want to exit? (Y/n): ', (answer) => {
+          rl.close();
+          const response = answer.toLowerCase().trim();
+          resolve(response === '' || response === 'y' || response === 'yes');
+        });
+      });
+
+      if (confirmed) {
         console.log(chalk.cyan('\n👋 Thank you for using GhostCDN CLI!'));
         console.log(chalk.dim('Visit the web dashboard for file management and analytics'));
         console.log(chalk.dim('https://ghostcdn.xyz\n'));

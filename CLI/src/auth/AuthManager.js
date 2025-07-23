@@ -1,6 +1,47 @@
-const inquirer = require('inquirer');
-const chalk = require('chalk');
-const ora = require('ora');
+// Simple color functions to replace chalk
+const colors = {
+  red: (text) => `\x1b[31m${text}\x1b[0m`,
+  yellow: (text) => `\x1b[33m${text}\x1b[0m`,
+  cyan: (text) => `\x1b[36m${text}\x1b[0m`,
+  dim: (text) => `\x1b[2m${text}\x1b[0m`,
+  green: (text) => `\x1b[32m${text}\x1b[0m`,
+  blue: (text) => `\x1b[34m${text}\x1b[0m`,
+  white: (text) => `\x1b[37m${text}\x1b[0m`,
+  magenta: (text) => `\x1b[35m${text}\x1b[0m`,
+  bold: (text) => `\x1b[1m${text}\x1b[0m`
+};
+const chalk = colors;
+
+// Simple spinner implementation to replace ora
+const createSpinner = (text) => {
+  const frames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+  let i = 0;
+  let interval;
+  
+  return {
+    start: function() {
+       process.stdout.write(`${frames[0]} ${text}`);
+       interval = setInterval(() => {
+         process.stdout.write(`\r${frames[i]} ${text}`);
+         i = (i + 1) % frames.length;
+       }, 80);
+       return this;
+     },
+    succeed: (message) => {
+      clearInterval(interval);
+      process.stdout.write(`\r✅ ${message || text}\n`);
+    },
+    fail: (message) => {
+      clearInterval(interval);
+      process.stdout.write(`\r❌ ${message || text}\n`);
+    },
+    stop: () => {
+      clearInterval(interval);
+      process.stdout.write('\r');
+    }
+  };
+};
+const ora = createSpinner;
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
@@ -179,32 +220,88 @@ class AuthManager {
       console.log(chalk.cyan('🔐 GhostCDN Authentication'));
       console.log(chalk.dim('Enter your API key to continue. You can generate one from the web dashboard.\n'));
 
-      const answers = await inquirer.prompt([
-        {
-          type: 'password',
-          name: 'apiKey',
-          message: 'API Key:',
-          mask: '*',
-          validate: (input) => {
-            if (!input || input.trim().length === 0) {
-              return 'API key is required';
+      // Simple readline implementation to replace inquirer
+      const readline = require('readline');
+      const rl = readline.createInterface({
+        input: process.stdin,
+        output: process.stdout
+      });
+      
+      const askQuestion = (question) => {
+        return new Promise((resolve) => {
+          rl.question(question, (answer) => {
+            resolve(answer);
+          });
+        });
+      };
+      
+      const askPassword = (question) => {
+        return new Promise((resolve) => {
+          process.stdout.write(question);
+          process.stdin.setRawMode(true);
+          process.stdin.resume();
+          
+          let password = '';
+          process.stdin.on('data', function(char) {
+            char = char + '';
+            
+            switch (char) {
+              case '\n':
+              case '\r':
+              case '\u0004':
+                process.stdin.setRawMode(false);
+                process.stdin.pause();
+                process.stdout.write('\n');
+                resolve(password);
+                break;
+              case '\u0003':
+                process.exit();
+                break;
+              default:
+                if (char.charCodeAt(0) === 8) {
+                  // Backspace
+                  if (password.length > 0) {
+                    password = password.slice(0, -1);
+                    process.stdout.write('\b \b');
+                  }
+                } else {
+                  password += char;
+                  process.stdout.write('*');
+                }
+                break;
             }
-            if (!input.startsWith('gcdn_')) {
-              return 'Invalid API key format. API keys should start with "gcdn_"';
-            }
-            if (input.length < 20) {
-              return 'API key appears to be too short';
-            }
-            return true;
-          }
-        },
-        {
-          type: 'confirm',
-          name: 'saveCredentials',
-          message: 'Save credentials securely for future use?',
-          default: true
+          });
+        });
+      };
+      
+      let apiKey;
+      while (true) {
+        apiKey = await askPassword('API Key: ');
+        
+        if (!apiKey || apiKey.trim().length === 0) {
+          console.log(chalk.red('API key is required'));
+          continue;
         }
-      ]);
+        if (!apiKey.startsWith('gcdn_')) {
+          console.log(chalk.red('Invalid API key format. API keys should start with "gcdn_"'));
+          continue;
+        }
+        if (apiKey.length < 20) {
+          console.log(chalk.red('API key appears to be too short'));
+          continue;
+        }
+        break;
+      }
+      
+      const saveResponse = await askQuestion('Save credentials securely for future use? (Y/n): ');
+      const saveCredentials = saveResponse.toLowerCase().trim() === '' || saveResponse.toLowerCase().trim() === 'y' || saveResponse.toLowerCase().trim() === 'yes';
+      
+      rl.close();
+      
+      const answers = {
+        apiKey: apiKey,
+        saveCredentials: saveCredentials
+      };
 
       // Validate API key with server
       const spinner = ora('Authenticating with GhostCDN...').start();

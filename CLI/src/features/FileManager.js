@@ -1,6 +1,47 @@
 const inquirer = require('inquirer');
-const chalk = require('chalk');
-const ora = require('ora');
+// Simple color functions to replace chalk
+const colors = {
+  red: (text) => `\x1b[31m${text}\x1b[0m`,
+  yellow: (text) => `\x1b[33m${text}\x1b[0m`,
+  cyan: (text) => `\x1b[36m${text}\x1b[0m`,
+  dim: (text) => `\x1b[2m${text}\x1b[0m`,
+  green: (text) => `\x1b[32m${text}\x1b[0m`,
+  blue: (text) => `\x1b[34m${text}\x1b[0m`,
+  white: (text) => `\x1b[37m${text}\x1b[0m`,
+  magenta: (text) => `\x1b[35m${text}\x1b[0m`,
+  bold: (text) => `\x1b[1m${text}\x1b[0m`
+};
+const chalk = colors;
+// Simple spinner implementation to replace ora
+const createSpinner = (text) => {
+  const frames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+  let i = 0;
+  let interval;
+  
+  return {
+    start: function() {
+       process.stdout.write(`${frames[0]} ${text}`);
+       interval = setInterval(() => {
+         process.stdout.write(`\r${frames[i]} ${text}`);
+         i = (i + 1) % frames.length;
+       }, 80);
+       return this;
+     },
+    succeed: (message) => {
+      clearInterval(interval);
+      process.stdout.write(`\r✅ ${message || text}\n`);
+    },
+    fail: (message) => {
+      clearInterval(interval);
+      process.stdout.write(`\r❌ ${message || text}\n`);
+    },
+    stop: () => {
+      clearInterval(interval);
+      process.stdout.write('\r');
+    }
+  };
+};
+const ora = createSpinner;
 const axios = require('axios');
 
 const {

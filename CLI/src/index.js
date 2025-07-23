@@ -1,6 +1,13 @@
 #!/usr/bin/env node
 
-const chalk = require('chalk');
+// Simple color functions to replace chalk
+const colors = {
+  red: (text) => `\x1b[31m${text}\x1b[0m`,
+  yellow: (text) => `\x1b[33m${text}\x1b[0m`,
+  cyan: (text) => `\x1b[36m${text}\x1b[0m`,
+  dim: (text) => `\x1b[2m${text}\x1b[0m`
+};
+const chalk = colors;
 
 const AuthManager = require('./auth/AuthManager');
 const MainMenu = require('./ui/MainMenu');
@@ -60,21 +67,42 @@ process.on('SIGTERM', async () => {
 
 // Handle uncaught exceptions
 process.on('uncaughtException', (error) => {
-  console.error(chalk.red('\n💥 An unexpected error occurred'));
+  console.error(chalk.red('\n💥 An unexpected error occurred:'));
+  console.error(chalk.red(error.message));
+  console.error(chalk.dim(error.stack));
   console.error(chalk.red('Please restart the application and try again.'));
-  process.exit(1);
+  console.log('\nPress any key to exit...');
+  process.stdin.setRawMode(true);
+  process.stdin.resume();
+  process.stdin.on('data', () => process.exit(1));
 });
 
 process.on('unhandledRejection', (reason, promise) => {
-  console.error(chalk.red('\n💥 An unexpected error occurred'));
+  console.error(chalk.red('\n💥 An unexpected error occurred:'));
+  console.error(chalk.red(reason));
   console.error(chalk.red('Please restart the application and try again.'));
-  process.exit(1);
+  console.log('\nPress any key to exit...');
+  process.stdin.setRawMode(true);
+  process.stdin.resume();
+  process.stdin.on('data', () => process.exit(1));
 });
 
 // Start the CLI
 if (require.main === module) {
+  console.log('🚀 Starting GhostCDN CLI...');
+  console.log('📍 Working directory:', process.cwd());
+  console.log('🔧 Node.js version:', process.version);
+  console.log('💻 Platform:', process.platform);
+  
   const cli = new GhostCDNCLI();
-  cli.start();
+  cli.start().catch(error => {
+    console.error('❌ Failed to start CLI:', error.message);
+    console.error('Stack trace:', error.stack);
+    console.log('\nPress any key to exit...');
+    process.stdin.setRawMode(true);
+    process.stdin.resume();
+    process.stdin.on('data', () => process.exit(1));
+  });
 }
 
 module.exports = GhostCDNCLI;
