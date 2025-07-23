@@ -22,7 +22,11 @@ class EmailService {
   async verifyConnection() {
     try {
       await this.transporter.verify();
-      console.log('✅ Maileroo SMTP connection verified');
+      // Only log SMTP verification once per application startup
+      if (!global.smtpVerified) {
+        console.log('✅ Maileroo SMTP connection verified');
+        global.smtpVerified = true;
+      }
     } catch (error) {
       console.error('❌ Maileroo SMTP connection failed:', error.message);
       console.warn('⚠️  Email functionality will be disabled');
@@ -369,10 +373,7 @@ If you didn't request this password reset, please ignore this email or contact s
                 <p>Upload your images and get instant CDN links that work globally.</p>
             </div>
             
-            <div class="feature">
-                <h4>📊 Track Analytics</h4>
-                <p>Monitor your image views, bandwidth usage, and performance metrics.</p>
-            </div>
+
             
             <div class="feature">
                 <h4>🎨 Image Optimization</h4>
@@ -412,7 +413,7 @@ Visit your dashboard: ${dashboardUrl}
 
 What you can do now:
 • Upload Images - Upload your images and get instant CDN links
-• Track Analytics - Monitor views, bandwidth usage, and performance
+
 • Image Optimization - Automatically optimize images for better performance
 • Generate Thumbnails - Create multiple thumbnail sizes
 
@@ -426,4 +427,20 @@ The GhostCDN Team
   }
 }
 
-module.exports = new EmailService();
+// Create singleton instance - only create once
+let emailServiceInstance = null;
+
+function getEmailServiceInstance() {
+  if (!emailServiceInstance) {
+    emailServiceInstance = new EmailService();
+  }
+  return emailServiceInstance;
+}
+
+module.exports = {
+  get sendVerificationEmail() { return getEmailServiceInstance().sendVerificationEmail.bind(getEmailServiceInstance()); },
+  get sendPasswordResetEmail() { return getEmailServiceInstance().sendPasswordResetEmail.bind(getEmailServiceInstance()); },
+  get sendWelcomeEmail() { return getEmailServiceInstance().sendWelcomeEmail.bind(getEmailServiceInstance()); },
+  get verifyConnection() { return getEmailServiceInstance().verifyConnection.bind(getEmailServiceInstance()); },
+  get logEmailActivity() { return getEmailServiceInstance().logEmailActivity.bind(getEmailServiceInstance()); }
+};

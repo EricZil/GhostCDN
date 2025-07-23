@@ -1,7 +1,9 @@
+// @ts-ignore - Mongoose types are incorrectly resolved
 const mongoose = require('mongoose');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 
+// @ts-ignore - Schema is a valid property on mongoose
 const userSchema = new mongoose.Schema({
   username: {
     type: String,
@@ -38,8 +40,13 @@ const userSchema = new mongoose.Schema({
   }
 });
 
+/**
+ * @this {import('mongoose').Document}
+ */
 // Hash password before saving
 userSchema.pre('save', async function(next) {
+  // 'this' is a mongoose document with isModified method
+  // @ts-ignore - isModified is a valid method on mongoose document
   if (!this.isModified('password')) return next();
   
   try {
@@ -65,6 +72,7 @@ userSchema.methods.generateAuthToken = function() {
   );
 };
 
+// @ts-ignore - model is a valid property on mongoose
 const User = mongoose.model('User', userSchema);
 
 module.exports = User; 

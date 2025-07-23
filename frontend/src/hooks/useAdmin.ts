@@ -1,11 +1,11 @@
-import { useState, useCallback } from 'react';
+import { useCallback } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
 
 interface AdminStats {
   totalUsers: number;
   totalFiles: number;
   totalStorage: number;
-  totalBandwidth: number;
   usersToday: number;
   filesThisWeek: number;
   systemHealth: {
@@ -18,7 +18,7 @@ interface AdminStats {
     action: string;
     details: string;
     time: string;
-    severity: string;
+    severity: 'high' | 'medium' | 'low';
     user: string;
   }>;
 }
@@ -42,25 +42,13 @@ interface AdminFile {
   fileSize: number;
   fileType: string;
   uploadedAt: string;
-  viewCount: number;
   owner: {
     name: string;
     email: string;
   };
 }
 
-interface AdminAnalytics {
-  totalViews: number;
-  totalUploads: number;
-  topFiles: Array<{
-    fileName: string;
-    views: number;
-    fileSize: number;
-  }>;
-  userGrowth: number;
-  storageGrowth: number;
-  period: string;
-}
+
 
 interface SystemSettings {
   userRegistration: boolean;
@@ -97,10 +85,22 @@ interface SystemMessage {
   };
 }
 
+// Admin query keys for consistent caching
+const adminQueryKeys = {
+  overview: () => ['admin', 'overview'],
+  users: (search?: string, role?: string, page = 1, limit = 20) => 
+    ['admin', 'users', { search, role, page, limit }],
+  files: (search?: string, type?: string, page = 1, limit = 20) => 
+    ['admin', 'files', { search, type, page, limit }],
+  settings: () => ['admin', 'settings'],
+  logs: (level?: string, source?: string, page = 1, limit = 50) => 
+    ['admin', 'logs', { level, source, page, limit }],
+  messages: () => ['admin', 'messages'],
+};
+
 export const useAdmin = () => {
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const { user } = useAuth();
+  const queryClient = useQueryClient();
 
   const makeAdminRequest = useCallback(async (
     endpoint: string, 
@@ -126,238 +126,191 @@ export const useAdmin = () => {
     return response.json();
   }, [user]);
 
-  // Admin Overview
-  const fetchAdminOverview = useCallback(async (): Promise<AdminStats> => {
-    setLoading(true);
-    setError(null);
-    try {
+  // Admin Overview Query
+  const overviewQuery = useQuery({
+    queryKey: adminQueryKeys.overview(),
+    queryFn: async () => {
       const data = await makeAdminRequest('/overview');
-      return data;
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to fetch admin overview';
-      setError(errorMessage);
-      throw err;
-    } finally {
-      setLoading(false);
-    }
-  }, [makeAdminRequest]);
+      return data as AdminStats;
+    },
+    enabled: !!user && user.role === 'ADMIN',
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    gcTime: 10 * 60 * 1000, // 10 minutes
+    refetchOnWindowFocus: false,
+  });
 
-  // User Management
-  const fetchUsers = useCallback(async (
-    search?: string, 
-    role?: string, 
-    page = 1, 
-    limit = 20
-  ): Promise<{
-    users: AdminUser[];
-    totalUsers: number;
-    currentPage: number;
-    totalPages: number;
-  }> => {
-    setLoading(true);
-    setError(null);
-    try {
-      const params = new URLSearchParams({
-        page: page.toString(),
-        limit: limit.toString(),
-      });
-      
-      if (search) params.append('search', search);
-      if (role && role !== 'all') params.append('role', role);
+  // Users Query
+  const useUsers = (search?: string, role?: string, page = 1, limit = 20) => {
+    return useQuery({
+      queryKey: adminQueryKeys.users(search, role, page, limit),
+      queryFn: async () => {
+        const params = new URLSearchParams({
+          page: page.toString(),
+          limit: limit.toString(),
+        });
+        
+        if (search) params.append('search', search);
+        if (role && role !== 'all') params.append('role', role);
 
-      const data = await makeAdminRequest(`/users?${params}`);
-      return data;
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to fetch users';
-      setError(errorMessage);
-      throw err;
-    } finally {
-      setLoading(false);
-    }
-  }, [makeAdminRequest]);
+        const data = await makeAdminRequest(`/users?${params}`);
+        return data as {
+          users: AdminUser[];
+          totalUsers: number;
+          currentPage: number;
+          totalPages: number;
+        };
+      },
+      enabled: !!user && user.role === 'ADMIN',
+      staleTime: 2 * 60 * 1000, // 2 minutes
+      gcTime: 5 * 60 * 1000, // 5 minutes
+      refetchOnWindowFocus: false,
+    });
+  };
 
-  const updateUser = useCallback(async (
-    userId: string, 
-    updates: { role?: string; action?: 'suspend' | 'activate' }
-  ): Promise<void> => {
-    setLoading(true);
-    setError(null);
-    try {
+  // Update User Mutation
+  const updateUserMutation = useMutation({
+    mutationFn: async ({ userId, updates }: {
+      userId: string;
+      updates: { role?: string; action?: 'suspend' | 'activate' };
+    }) => {
       await makeAdminRequest(`/users/${userId}`, {
         method: 'PUT',
         body: JSON.stringify(updates),
       });
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to update user';
-      setError(errorMessage);
-      throw err;
-    } finally {
-      setLoading(false);
-    }
-  }, [makeAdminRequest]);
+    },
+    onSuccess: () => {
+      // Invalidate users queries
+      queryClient.invalidateQueries({ queryKey: ['admin', 'users'] });
+      queryClient.invalidateQueries({ queryKey: adminQueryKeys.overview() });
+    },
+  });
 
-  const deleteUser = useCallback(async (userId: string): Promise<void> => {
-    setLoading(true);
-    setError(null);
-    try {
+  // Delete User Mutation
+  const deleteUserMutation = useMutation({
+    mutationFn: async (userId: string) => {
       await makeAdminRequest(`/users/${userId}`, {
         method: 'DELETE',
       });
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to delete user';
-      setError(errorMessage);
-      throw err;
-    } finally {
-      setLoading(false);
-    }
-  }, [makeAdminRequest]);
+    },
+    onSuccess: () => {
+      // Invalidate users queries
+      queryClient.invalidateQueries({ queryKey: ['admin', 'users'] });
+      queryClient.invalidateQueries({ queryKey: adminQueryKeys.overview() });
+    },
+  });
 
-  const createUser = useCallback(async (userData: {
-    name: string;
-    email: string;
-    password: string;
-    role?: string;
-  }): Promise<void> => {
-    setLoading(true);
-    setError(null);
-    try {
+  // Create User Mutation
+  const createUserMutation = useMutation({
+    mutationFn: async (userData: {
+      name: string;
+      email: string;
+      password: string;
+      role?: string;
+    }) => {
       await makeAdminRequest('/users', {
         method: 'POST',
         body: JSON.stringify(userData),
       });
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to create user';
-      setError(errorMessage);
-      throw err;
-    } finally {
-      setLoading(false);
-    }
-  }, [makeAdminRequest]);
+    },
+    onSuccess: () => {
+      // Invalidate users queries
+      queryClient.invalidateQueries({ queryKey: ['admin', 'users'] });
+      queryClient.invalidateQueries({ queryKey: adminQueryKeys.overview() });
+    },
+  });
 
-  // File Management
-  const fetchAdminFiles = useCallback(async (
-    search?: string,
-    type?: string,
-    page = 1,
-    limit = 20
-  ): Promise<{
-    files: AdminFile[];
-    totalFiles: number;
-    currentPage: number;
-    totalPages: number;
-    stats: {
-      totalFiles: number;
-      largeFiles: number;
-      flaggedFiles: number;
-      orphanedFiles: number;
-    };
-  }> => {
-    setLoading(true);
-    setError(null);
-    try {
-      const params = new URLSearchParams({
-        page: page.toString(),
-        limit: limit.toString(),
-      });
-      
-      if (search) params.append('search', search);
-      if (type && type !== 'all') params.append('type', type);
+  // Files Query
+  const useFiles = (search?: string, type?: string, page = 1, limit = 20) => {
+    return useQuery({
+      queryKey: adminQueryKeys.files(search, type, page, limit),
+      queryFn: async () => {
+        const params = new URLSearchParams({
+          page: page.toString(),
+          limit: limit.toString(),
+        });
+        
+        if (search) params.append('search', search);
+        if (type && type !== 'all') params.append('type', type);
 
-      const data = await makeAdminRequest(`/files?${params}`);
-      return data;
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to fetch files';
-      setError(errorMessage);
-      throw err;
-    } finally {
-      setLoading(false);
-    }
-  }, [makeAdminRequest]);
+        const data = await makeAdminRequest(`/files?${params}`);
+        return data as {
+          files: AdminFile[];
+          totalFiles: number;
+          currentPage: number;
+          totalPages: number;
+          stats: {
+            totalFiles: number;
+            largeFiles: number;
+            flaggedFiles: number;
+            orphanedFiles: number;
+          };
+        };
+      },
+      enabled: !!user && user.role === 'ADMIN',
+      staleTime: 3 * 60 * 1000, // 3 minutes
+      gcTime: 8 * 60 * 1000, // 8 minutes
+      refetchOnWindowFocus: false,
+    });
+  };
 
-  // Analytics
-  const fetchAdminAnalytics = useCallback(async (period = '7d'): Promise<AdminAnalytics> => {
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await makeAdminRequest(`/analytics?period=${period}`);
-      return data;
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to fetch analytics';
-      setError(errorMessage);
-      throw err;
-    } finally {
-      setLoading(false);
-    }
-  }, [makeAdminRequest]);
 
-  // System Settings
-  const fetchSystemSettings = useCallback(async (): Promise<SystemSettings> => {
-    setLoading(true);
-    setError(null);
-    try {
+
+  // System Settings Query
+  const settingsQuery = useQuery({
+    queryKey: adminQueryKeys.settings(),
+    queryFn: async () => {
       const data = await makeAdminRequest('/settings');
-      return data;
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to fetch settings';
-      setError(errorMessage);
-      throw err;
-    } finally {
-      setLoading(false);
-    }
-  }, [makeAdminRequest]);
+      return data as SystemSettings;
+    },
+    enabled: !!user && user.role === 'ADMIN',
+    staleTime: 15 * 60 * 1000, // 15 minutes
+    gcTime: 30 * 60 * 1000, // 30 minutes
+    refetchOnWindowFocus: false,
+  });
 
-  const updateSystemSettings = useCallback(async (settings: Partial<SystemSettings>): Promise<void> => {
-    setLoading(true);
-    setError(null);
-    try {
+  // Update System Settings Mutation
+  const updateSettingsMutation = useMutation({
+    mutationFn: async (settings: Partial<SystemSettings>) => {
       await makeAdminRequest('/settings', {
         method: 'PUT',
         body: JSON.stringify(settings),
       });
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to update settings';
-      setError(errorMessage);
-      throw err;
-    } finally {
-      setLoading(false);
-    }
-  }, [makeAdminRequest]);
+    },
+    onSuccess: () => {
+      // Invalidate settings query
+      queryClient.invalidateQueries({ queryKey: adminQueryKeys.settings() });
+    },
+  });
 
-  // System Logs
-  const fetchSystemLogs = useCallback(async (
-    level?: string,
-    source?: string,
-    page = 1,
-    limit = 50
-  ): Promise<{
-    logs: SystemLog[];
-    totalLogs: number;
-    currentPage: number;
-    totalPages: number;
-    sources: string[];
-    levels: string[];
-  }> => {
-    setLoading(true);
-    setError(null);
-    try {
-      const params = new URLSearchParams({
-        page: page.toString(),
-        limit: limit.toString(),
-      });
-      
-      if (level && level !== 'all') params.append('level', level);
-      if (source && source !== 'all') params.append('source', source);
+  // System Logs Query
+  const useLogs = (level?: string, source?: string, page = 1, limit = 50) => {
+    return useQuery({
+      queryKey: adminQueryKeys.logs(level, source, page, limit),
+      queryFn: async () => {
+        const params = new URLSearchParams({
+          page: page.toString(),
+          limit: limit.toString(),
+        });
+        
+        if (level && level !== 'all') params.append('level', level);
+        if (source && source !== 'all') params.append('source', source);
 
-      const data = await makeAdminRequest(`/logs?${params}`);
-      return data;
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to fetch logs';
-      setError(errorMessage);
-      throw err;
-    } finally {
-      setLoading(false);
-    }
-  }, [makeAdminRequest]);
+        const data = await makeAdminRequest(`/logs?${params}`);
+        return data as {
+          logs: SystemLog[];
+          totalLogs: number;
+          currentPage: number;
+          totalPages: number;
+          sources: string[];
+          levels: string[];
+        };
+      },
+      enabled: !!user && user.role === 'ADMIN',
+      staleTime: 30 * 1000, // 30 seconds
+      gcTime: 2 * 60 * 1000, // 2 minutes
+      refetchOnWindowFocus: false,
+    });
+  };
 
   // Utility functions
   const formatFileSize = useCallback((bytes: number): string => {
@@ -379,115 +332,111 @@ export const useAdmin = () => {
     return `${Math.floor(diffInSeconds / 86400)} days ago`;
   }, []);
 
-  // System Messages
-  const fetchSystemMessages = useCallback(async (): Promise<{ messages: SystemMessage[] }> => {
-    setLoading(true);
-    setError(null);
-    try {
+  // System Messages Query
+  const messagesQuery = useQuery({
+    queryKey: adminQueryKeys.messages(),
+    queryFn: async () => {
       const data = await makeAdminRequest('/messages');
-      return data;
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to fetch messages';
-      setError(errorMessage);
-      throw err;
-    } finally {
-      setLoading(false);
-    }
-  }, [makeAdminRequest]);
+      return data as { messages: SystemMessage[] };
+    },
+    enabled: !!user && user.role === 'ADMIN',
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    gcTime: 10 * 60 * 1000, // 10 minutes
+    refetchOnWindowFocus: false,
+  });
 
-  const createSystemMessage = useCallback(async (messageData: {
-    title: string;
-    content: string;
-    type: 'CRITICAL' | 'WARNING' | 'INFO';
-  }): Promise<{ message: SystemMessage }> => {
-    setLoading(true);
-    setError(null);
-    try {
+  // Create System Message Mutation
+  const createMessageMutation = useMutation({
+    mutationFn: async (messageData: {
+      title: string;
+      content: string;
+      type: 'CRITICAL' | 'WARNING' | 'INFO';
+    }) => {
       const data = await makeAdminRequest('/messages', {
         method: 'POST',
         body: JSON.stringify(messageData),
       });
-      return data;
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to create message';
-      setError(errorMessage);
-      throw err;
-    } finally {
-      setLoading(false);
-    }
-  }, [makeAdminRequest]);
+      return data as { message: SystemMessage };
+    },
+    onSuccess: () => {
+      // Invalidate messages query
+      queryClient.invalidateQueries({ queryKey: adminQueryKeys.messages() });
+    },
+  });
 
-  const updateSystemMessage = useCallback(async (
-    messageId: string,
-    updates: Partial<Pick<SystemMessage, 'title' | 'content' | 'type' | 'isActive'>>
-  ): Promise<{ message: SystemMessage }> => {
-    setLoading(true);
-    setError(null);
-    try {
+  // Update System Message Mutation
+  const updateMessageMutation = useMutation({
+    mutationFn: async ({ messageId, updates }: {
+      messageId: string;
+      updates: Partial<Pick<SystemMessage, 'title' | 'content' | 'type' | 'isActive'>>;
+    }) => {
       const data = await makeAdminRequest(`/messages/${messageId}`, {
         method: 'PUT',
         body: JSON.stringify(updates),
       });
-      return data;
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to update message';
-      setError(errorMessage);
-      throw err;
-    } finally {
-      setLoading(false);
-    }
-  }, [makeAdminRequest]);
+      return data as { message: SystemMessage };
+    },
+    onSuccess: () => {
+      // Invalidate messages query
+      queryClient.invalidateQueries({ queryKey: adminQueryKeys.messages() });
+    },
+  });
 
-  const deleteSystemMessage = useCallback(async (messageId: string): Promise<void> => {
-    setLoading(true);
-    setError(null);
-    try {
+  // Delete System Message Mutation
+  const deleteMessageMutation = useMutation({
+    mutationFn: async (messageId: string) => {
       await makeAdminRequest(`/messages/${messageId}`, {
         method: 'DELETE',
       });
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to delete message';
-      setError(errorMessage);
-      throw err;
-    } finally {
-      setLoading(false);
-    }
-  }, [makeAdminRequest]);
+    },
+    onSuccess: () => {
+      // Invalidate messages query
+      queryClient.invalidateQueries({ queryKey: adminQueryKeys.messages() });
+    },
+  });
+
+  // Manual Cleanup Mutation
+  const manualCleanupMutation = useMutation({
+    mutationFn: async () => {
+      const data = await makeAdminRequest('/cleanup/run', {
+        method: 'POST',
+      });
+      return data as { deletedCount: number; errorCount: number; message: string };
+    },
+    onSuccess: () => {
+      // Invalidate overview query to refresh stats
+      queryClient.invalidateQueries({ queryKey: adminQueryKeys.overview() });
+    },
+  });
 
   return {
-    loading,
-    error,
+    // Queries
+    overviewQuery,
+    useUsers,
+    useFiles,
+    settingsQuery,
+    useLogs,
+    messagesQuery,
     
-    // Admin Overview
-    fetchAdminOverview,
+    // Mutations
+    updateUserMutation,
+    deleteUserMutation,
+    createUserMutation,
+    updateSettingsMutation,
+    createMessageMutation,
+    updateMessageMutation,
+    deleteMessageMutation,
+    manualCleanupMutation,
     
-    // User Management
-    fetchUsers,
-    updateUser,
-    deleteUser,
-    createUser,
-    
-    // File Management
-    fetchAdminFiles,
-    
-    // Analytics
-    fetchAdminAnalytics,
-    
-    // System Settings
-    fetchSystemSettings,
-    updateSystemSettings,
-    
-    // System Logs
-    fetchSystemLogs,
-    
-    // System Messages
-    fetchSystemMessages,
-    createSystemMessage,
-    updateSystemMessage,
-    deleteSystemMessage,
+    // Legacy state for backward compatibility (will be removed)
+    loading: overviewQuery.isLoading || settingsQuery.isLoading || messagesQuery.isLoading,
+    error: overviewQuery.error?.message || settingsQuery.error?.message || messagesQuery.error?.message || null,
     
     // Utilities
     formatFileSize,
     formatTimeAgo,
+    
+    // Query client for manual invalidation
+    queryClient,
   };
-}; 
+};

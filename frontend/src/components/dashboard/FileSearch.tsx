@@ -16,6 +16,7 @@ export interface SearchFilters {
   sizeRange: string;
   sortBy: string;
   sortOrder: 'asc' | 'desc';
+  [key: string]: string;
 }
 
 export default function FileSearch({ onSearch, totalFiles, isLoading }: FileSearchProps) {
@@ -227,4 +228,4 @@ export default function FileSearch({ onSearch, totalFiles, isLoading }: FileSear
       </AnimatePresence>
     </div>
   );
-} 
+}

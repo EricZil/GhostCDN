@@ -20,5 +20,11 @@
         "Access-Control-Allow-Headers": "X-API-KEY, X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version"
       }
     }
+  ],
+  "crons": [
+    {
+      "path": "/api/public/cleanup/webhook",
+      "schedule": "0 2 * * *"
+    }
   ]
-} 
+}

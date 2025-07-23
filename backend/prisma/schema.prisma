@@ -60,6 +60,7 @@ model User {
   bans                   UserBan[]
   bansByUser             UserBan[]       @relation("BannedByUser")
   unbansByUser           UserBan[]       @relation("UnbannedByUser")
+  apiKeys                ApiKey[]
 
   @@index([emailVerificationToken])
   @@index([passwordResetToken])
@@ -84,11 +85,14 @@ model Image {
   height     Int?
   mimeType   String?
   width      Int?
+  uploadSource String?   @default("web") // "web" or "cli"
+  hasThumbnails Boolean  @default(false) // Track if thumbnails were successfully generated
   analytics  Analytics[]
   user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([uploadedAt])
+  @@index([uploadSource])
 }
 
 model Analytics {
@@ -200,10 +204,13 @@ model GuestUpload {
   userAgent  String?
   isDeleted  Boolean   @default(false)
   deletedAt  DateTime?
+  uploadSource String?   @default("web") // "web" or "cli"
+  hasThumbnails Boolean  @default(false) // Track if thumbnails were successfully generated
 
   @@index([expiresAt])
   @@index([isDeleted])
   @@index([uploadedAt])
+  @@index([uploadSource])
 }
 
 model UserBan {
@@ -237,7 +244,6 @@ enum Role {
 }
 
 enum AnalyticsEvent {
-  VIEW
   DOWNLOAD
   SHARE
   THUMBNAIL_GENERATED
@@ -246,7 +252,6 @@ enum AnalyticsEvent {
 enum ActivityType {
   UPLOAD
   DELETE
-  VIEW
   DOWNLOAD
   SHARE
   LOGIN
@@ -274,4 +279,86 @@ enum BanType {
   EMAIL
   IP
   FULL
+}
+
+model ApiKey {
+  id            String    @id @default(cuid())
+  name          String    // User-friendly name for the key
+  keyHash       String    @unique // SHA-256 hash of the actual key
+  keyPrefix     String    // First 8 characters for identification (e.g., "gcdn_1234")
+  userId        String
+  permissions   Json      // JSON object defining permissions
+  rateLimit     Int       @default(1000) // Requests per hour
+  lastUsedAt    DateTime?
+  lastUsedIp    String?
+  usageCount    BigInt    @default(0)
+  isActive      Boolean   @default(true)
+  expiresAt     DateTime? // Optional expiration
+  isBlocked     Boolean   @default(false) // Security: temporary blocking
+  blockedUntil  DateTime? // Security: block expiration
+  ipWhitelist   Json?     // Security: allowed IP addresses (JSON array)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  // Relations
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  usageLogs     ApiKeyUsage[]
+  securityLogs  SecurityLog[]
+  
+  @@index([userId])
+  @@index([keyHash])
+  @@index([keyPrefix])
+  @@index([isActive])
+  @@index([expiresAt])
+  @@index([isBlocked])
+}
+
+model ApiKeyUsage {
+  id            String    @id @default(cuid())
+  apiKeyId      String
+  endpoint      String    // API endpoint accessed
+  method        String    // HTTP method
+  statusCode    Int       // Response status code
+  responseTime  Int       // Response time in milliseconds
+  ipAddress     String?
+  userAgent     String?
+  requestSize   Int?      // Request payload size in bytes
+  responseSize  Int?      // Response payload size in bytes
+  timestamp     DateTime  @default(now())
+  
+  // Relations
+  apiKey        ApiKey    @relation(fields: [apiKeyId], references: [id], onDelete: Cascade)
+  
+  @@index([apiKeyId])
+  @@index([timestamp])
+  @@index([endpoint])
+  @@index([statusCode])
+}
+
+model RateLimitBucket {
+  id            String    @id @default(cuid())
+  identifier    String    // API key ID or IP address
+  endpoint      String    // Specific endpoint or "global"
+  requests      Int       @default(0)
+  windowStart   DateTime  @default(now())
+  lastReset     DateTime  @default(now())
+  
+  @@unique([identifier, endpoint])
+  @@index([identifier])
+  @@index([windowStart])
+}
+
+model SecurityLog {
+  id          String    @id @default(cuid())
+  apiKeyId    String
+  eventType   String    // Type of security event (SUSPICIOUS_ACTIVITY, IP_WHITELIST_VIOLATION, etc.)
+  metadata    Json?     // Additional event data
+  timestamp   DateTime  @default(now())
+  
+  // Relations
+  apiKey      ApiKey    @relation(fields: [apiKeyId], references: [id], onDelete: Cascade)
+  
+  @@index([apiKeyId])
+  @@index([eventType])
+  @@index([timestamp])
 }

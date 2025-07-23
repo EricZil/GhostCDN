@@ -14,8 +14,12 @@ const dashboardRoutes = require('./routes/dashboard.routes');
 const adminRoutes = require('./routes/admin.routes');
 const publicRoutes = require('./routes/public.routes');
 const authRoutes = require('./routes/auth.routes');
+const apiKeysRoutes = require('./routes/apiKeys');
+const apiRoutes = require('./routes/api.routes');
 const { router: healthRoutes, performBackgroundHealthCheck } = require('./routes/health.routes');
 const { validateApiKey } = require('./middleware/apiKey.middleware');
+const prisma = require('./lib/prisma');
+const { cache } = require('./lib/cache-manager');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -71,6 +75,12 @@ app.use('/api/storage', uploadLimiter, validateApiKey, storageRoutes);
 app.use('/api/dashboard', validateApiKey, dashboardRoutes);
 app.use('/api/admin', adminLimiter, adminRoutes);
 
+// API Keys management routes (requires JWT authentication, not API key)
+app.use('/api/keys', apiKeysRoutes);
+
+// Public API routes for external users (requires Bearer token authentication)
+app.use('/api/v1', apiRoutes);
+
 // Auth routes (no API key required for frontend, but rate limited)
 app.use('/api/auth', publicLimiter, authRoutes);
 
@@ -93,22 +103,70 @@ app.use((err, req, res, next) => {
   });
 });
 
-app.listen(PORT, async () => {
-  console.log(`🚀 GhostCDN Backend running on port ${PORT}`);
-  
-  // Give Prisma client a moment to initialize
-  await new Promise(resolve => setTimeout(resolve, 1000));
-  
-  // Seed test logs on startup (only if none exist)
-  await seedTestLogs();
-  
-  // Perform initial health check
-  await performBackgroundHealthCheck();
-  
-  // Note: Periodic health checks and cleanup are handled via webhooks for Vercel compatibility
-  if (process.env.NODE_ENV !== 'production') {
-    console.log('🏥 Health monitoring initialized');
-    console.log('🕒 Cleanup system ready - use webhook endpoints for automated tasks');
-    console.log('📡 Webhook endpoint: POST /api/public/cleanup/webhook');
+// Cache warming function - preloads critical data into cache on server start
+async function warmupCache() {
+  try {
+    console.log('[Cache Warmup] Starting cache warmup process...');
+    
+    // 1. Cache system settings
+    const systemSettings = await prisma.systemSettings.findFirst();
+    if (systemSettings) {
+      await cache.set('system-settings', systemSettings, 30 * 60 * 1000, cache.namespaces.SYSTEM);
+      console.log('[Cache Warmup] System settings cached');
+    }
+    
+    // 2. Cache public system messages (announcements, etc.)
+    const activeMessages = await prisma.systemMessage.findMany({
+      where: { isActive: true }
+    });
+    if (activeMessages.length > 0) {
+      await cache.set('active-messages', activeMessages, 15 * 60 * 1000, cache.namespaces.SYSTEM);
+      console.log(`[Cache Warmup] ${activeMessages.length} system messages cached`);
+    }
+    
+    // 3. Cache frequently accessed file types for faster lookup
+    const fileTypes = await prisma.$queryRaw`
+      SELECT fileType, COUNT(*) as count 
+      FROM Image 
+      GROUP BY fileType 
+      ORDER BY count DESC 
+      LIMIT 10
+    `;
+    if (fileTypes.length > 0) {
+      await cache.set('common-file-types', fileTypes, 60 * 60 * 1000, cache.namespaces.SYSTEM);
+      console.log('[Cache Warmup] Common file types cached');
+    }
+    
+    // 4. Cache total stats
+    const totalStats = await prisma.image.aggregate({
+      _count: { id: true },
+      _sum: { fileSize: true }
+    });
+    if (totalStats) {
+      await cache.set('total-stats', {
+        totalFiles: totalStats._count.id || 0,
+        totalSize: totalStats._sum.fileSize || 0,
+        timestamp: new Date().toISOString()
+      }, 30 * 60 * 1000, cache.namespaces.SYSTEM);
+      console.log('[Cache Warmup] Total stats cached');
+    }
+    
+    console.log('[Cache Warmup] Cache warmup completed successfully');
+  } catch (error) {
+    console.error('[Cache Warmup] Error warming up cache:', error);
   }
-}); 
+}
+
+// Execute cache warmup when app starts
+if (process.env.NODE_ENV === 'production') {
+  // In production, warm up the cache immediately
+  warmupCache();
+  
+  // Then refresh it periodically (every hour)
+  setInterval(warmupCache, 60 * 60 * 1000);
+} else {
+  // In development, delay warmup to avoid slowing startup
+  setTimeout(warmupCache, 5000);
+}
+
+module.exports = app;

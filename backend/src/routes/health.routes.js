@@ -159,10 +159,15 @@ router.get('/detailed', async (req, res) => {
       if (publicUrl) {
         const startTime = Date.now();
         // Test CDN connectivity by checking if we can reach the public URL
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+        
         const testResponse = await fetch(`${publicUrl}/health-check`, { 
           method: 'HEAD',
-          timeout: 5000 
+          signal: controller.signal
         }).catch(() => null);
+        
+        clearTimeout(timeoutId);
         
         const responseTime = Date.now() - startTime;
         const isHealthy = testResponse && testResponse.ok;
@@ -430,10 +435,15 @@ const performBackgroundHealthCheck = async () => {
       const publicUrl = process.env.DO_SPACES_PUBLIC_URL;
       if (publicUrl) {
         const startTime = Date.now();
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+        
         const testResponse = await fetch(`${publicUrl}/health-check`, { 
           method: 'HEAD',
-          timeout: 5000 
+          signal: controller.signal
         }).catch(() => null);
+        
+        clearTimeout(timeoutId);
         
         const responseTime = Date.now() - startTime;
         const isHealthy = testResponse && testResponse.ok;

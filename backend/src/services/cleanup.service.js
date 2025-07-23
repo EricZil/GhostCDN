@@ -78,7 +78,7 @@ class CleanupService {
                 fileSize: upload.fileSize,
                 uploadedAt: upload.uploadedAt.toISOString(),
                 expiresAt: upload.expiresAt.toISOString(),
-                daysExpired: Math.floor((now - upload.expiresAt) / (1000 * 60 * 60 * 24))
+                daysExpired: Math.floor((now.getTime() - upload.expiresAt.getTime()) / (1000 * 60 * 60 * 24))
               })
             }
           });
@@ -206,7 +206,6 @@ class CleanupService {
           await this.deleteFileFromStorage(thumbnailKey);
         } catch (error) {
           // Continue if thumbnail doesn't exist
-          console.log(`Thumbnail not found or already deleted: ${thumbnailKey}`);
         }
       }
     } catch (error) {

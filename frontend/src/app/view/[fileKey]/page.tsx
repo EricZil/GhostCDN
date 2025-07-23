@@ -6,11 +6,22 @@ import Image from 'next/image';
 import { useParams } from 'next/navigation';
 import { PointerHighlight } from "@/components/PointerHighlight";
 import AnimatedGradientBorder from "@/components/ui/AnimatedGradientBorder";
+import VideoPlayer from "@/components/ui/VideoPlayer";
 import { motion, AnimatePresence } from 'framer-motion';
 import QRCode from 'qrcode';
 import ThumbnailLinks from '@/components/upload/ThumbnailLinks';
+import dynamic from 'next/dynamic';
 
-interface ImageInfo {
+const DocumentViewer = dynamic(() => import('@/components/ui/DocumentViewer'), {
+  ssr: false,
+  loading: () => (
+    <div className="flex items-center justify-center w-full h-full p-6">
+      <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-purple-500"></div>
+    </div>
+  )
+});
+
+interface FileInfo {
   url: string;
   size?: number;
   width?: number;
@@ -23,16 +34,24 @@ interface ImageInfo {
     medium: string;
     large: string;
   } | null;
+  isImage: boolean;
+  isVideo: boolean;
+  isAudio: boolean;
+  isPdf: boolean;
+  isText: boolean;
+  isCsv: boolean;
+  isDocument: boolean;
+  contentType?: string;
 }
 
-export default function ImageViewer() {
+export default function FileViewer() {
   const params = useParams();
   const fileKey = decodeURIComponent(params.fileKey as string);
   
   const [copied, setCopied] = useState<string | false>(false);
-  const [imageInfo, setImageInfo] = useState<ImageInfo | null>(null);
+  const [fileInfo, setFileInfo] = useState<FileInfo | null>(null);
   const [loading, setLoading] = useState(true);
-  const [imageError, setImageError] = useState(false);
+  const [fileError, setFileError] = useState(false);
   
   // Enhanced features state
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -40,13 +59,133 @@ export default function ImageViewer() {
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
-  const [showImageInfo, setShowImageInfo] = useState(true);
+  const [showFileInfo, setShowFileInfo] = useState(true);
   const [showQR, setShowQR] = useState(false);
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [qrCodeUrl, setQrCodeUrl] = useState<string | null>(null);
   
   const imageRef = useRef<HTMLImageElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // Get file type from file extension
+  const getFileTypeFromKey = useCallback((key: string) => {
+    const extension = key.split('.').pop()?.toLowerCase() || '';
+    const contentType = getContentTypeFromExtension(extension);
+    
+    // Check file type
+    const isImage = contentType.startsWith('image/');
+    const isVideo = contentType.startsWith('video/');
+    const isAudio = contentType.startsWith('audio/');
+    const isPdf = contentType === 'application/pdf';
+    const isText = contentType === 'text/plain';
+    const isCsv = contentType === 'text/csv';
+    const isDocument = contentType.includes('document') || 
+                      contentType.includes('spreadsheet') || 
+                      contentType.includes('presentation') ||
+                      ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'odt', 'ods', 'odp'].includes(extension);
+    
+    return {
+      extension,
+      contentType,
+      isImage,
+      isVideo,
+      isAudio,
+      isPdf,
+      isText,
+      isCsv,
+      isDocument
+    };
+  }, []);
+
+  // Map file extension to content type
+  const getContentTypeFromExtension = (extension: string): string => {
+    const contentTypeMap: {[key: string]: string} = {
+      // Images
+      'jpg': 'image/jpeg',
+      'jpeg': 'image/jpeg',
+      'png': 'image/png',
+      'gif': 'image/gif',
+      'webp': 'image/webp',
+      'svg': 'image/svg+xml',
+      'bmp': 'image/bmp',
+      // Videos
+      'mp4': 'video/mp4',
+      'm4v': 'video/mp4',
+      'webm': 'video/webm',
+      'mov': 'video/quicktime',
+      'qt': 'video/quicktime',
+      'avi': 'video/x-msvideo',
+      'wmv': 'video/x-ms-wmv',
+      'flv': 'video/x-flv',
+      'mpeg': 'video/mpeg',
+      'mpg': 'video/mpeg',
+      '3gp': 'video/3gpp',
+      'mkv': 'video/x-matroska',
+      'hevc': 'video/hevc',
+      'h265': 'video/hevc',
+      'ts': 'video/mp2t',
+      'mts': 'video/mp2t',
+      'divx': 'video/x-divx',
+      'ogv': 'video/ogg',
+      // Audio
+      'mp3': 'audio/mpeg',
+      'wav': 'audio/wav',
+      'ogg': 'audio/ogg',
+      'flac': 'audio/flac',
+      // Documents
+      'pdf': 'application/pdf',
+      'doc': 'application/msword',
+      'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'xls': 'application/vnd.ms-excel',
+      'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'ppt': 'application/vnd.ms-powerpoint',
+      'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      // Text files
+      'txt': 'text/plain',
+      'csv': 'text/csv',
+      'html': 'text/html',
+      'css': 'text/css',
+      'js': 'application/javascript',
+      'json': 'application/json',
+      'xml': 'application/xml',
+      'md': 'text/markdown',
+      // Other
+      'zip': 'application/zip',
+      'rar': 'application/x-rar-compressed'
+    };
+    
+    return contentTypeMap[extension] || 'application/octet-stream';
+  };
+
+  // Extract dominant colors from image
+  const extractDominantColors = useCallback((img: HTMLImageElement): string[] => {
+    try {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return [];
+      
+      canvas.width = 50;
+      canvas.height = 50;
+      ctx.drawImage(img, 0, 0, 50, 50);
+      
+      // Return default color palette
+      return ['#6366f1', '#8b5cf6', '#06b6d4', '#10b981', '#f59e0b'];
+    } catch {
+      return [];
+    }
+  }, []);
+
+  // Reset zoom and pan
+  const resetZoom = useCallback(() => {
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+  }, []);
+
+  // Toggle fullscreen mode
+  const toggleFullscreen = useCallback(() => {
+    setIsFullscreen(!isFullscreen);
+    resetZoom();
+  }, [isFullscreen, resetZoom]);
 
   // Generate thumbnail URLs based on file structure
   const generateThumbnailUrls = useCallback((originalFileKey: string) => {
@@ -87,9 +226,9 @@ export default function ImageViewer() {
     }
   }, []);
 
-  // Fetch enhanced image data
+  // Fetch file data
   useEffect(() => {
-    async function fetchImageData() {
+    async function fetchFileData() {
       try {
         setLoading(true);
         
@@ -97,82 +236,100 @@ export default function ImageViewer() {
         const encodedFileKey = fileKey.split('/').map(part => encodeURIComponent(part)).join('/');
         const directUrl = `${baseUrl}/${encodedFileKey}`;
         
-        // Fetch file size from headers
+        // Fetch file info from headers
         const response = await fetch(directUrl, { method: 'HEAD' });
         const fileSize = response.headers.get('content-length');
+        const contentType = response.headers.get('content-type') || undefined;
         
-        // Check for thumbnails
-        const thumbnailUrls = generateThumbnailUrls(fileKey);
+        // Get file type info
+        const fileTypeInfo = getFileTypeFromKey(fileKey);
+        const isImage = fileTypeInfo.isImage || (contentType?.startsWith('image/') || false);
+        
+        // Check for thumbnails only if it's an image
         let thumbnails = null;
-        
-        if (thumbnailUrls) {
-          // Check which thumbnails exist
-          const [smallExists, mediumExists, largeExists] = await Promise.all([
-            checkThumbnailExists(thumbnailUrls.small),
-            checkThumbnailExists(thumbnailUrls.medium),
-            checkThumbnailExists(thumbnailUrls.large)
-          ]);
+        if (isImage) {
+          const thumbnailUrls = generateThumbnailUrls(fileKey);
           
-          if (smallExists || mediumExists || largeExists) {
-            thumbnails = {
-              small: smallExists ? thumbnailUrls.small : '',
-              medium: mediumExists ? thumbnailUrls.medium : '',
-              large: largeExists ? thumbnailUrls.large : ''
-            };
+          if (thumbnailUrls) {
+            // Check which thumbnails exist
+            const [smallExists, mediumExists, largeExists] = await Promise.all([
+              checkThumbnailExists(thumbnailUrls.small),
+              checkThumbnailExists(thumbnailUrls.medium),
+              checkThumbnailExists(thumbnailUrls.large)
+            ]);
+            
+            if (smallExists || mediumExists || largeExists) {
+              thumbnails = {
+                small: smallExists ? thumbnailUrls.small : '',
+                medium: mediumExists ? thumbnailUrls.medium : '',
+                large: largeExists ? thumbnailUrls.large : ''
+              };
+            }
           }
         }
         
-        const img = new window.Image();
-        img.onload = () => {
-          setImageInfo({
+        if (isImage) {
+          // For images, load and get dimensions
+          const img = new window.Image();
+          img.onload = () => {
+            setFileInfo({
+              url: directUrl,
+              width: img.width,
+              height: img.height,
+              type: fileTypeInfo.contentType,
+              fileSize: fileSize ? parseInt(fileSize) : undefined,
+              dominantColors: extractDominantColors(img),
+              thumbnails,
+              isImage: true,
+              isVideo: false,
+              isAudio: false,
+              isPdf: false,
+              isText: false,
+              isCsv: false,
+              isDocument: false,
+              contentType: contentType
+            });
+            setLoading(false);
+          };
+          
+          img.onerror = () => {
+            setFileError(true);
+            setLoading(false);
+          };
+          
+          img.src = directUrl;
+          img.crossOrigin = "anonymous";
+        } else {
+          // For non-images, just set the file info
+          setFileInfo({
             url: directUrl,
-            width: img.width,
-            height: img.height,
-            type: getFileTypeFromKey(fileKey),
+            type: fileTypeInfo.contentType,
             fileSize: fileSize ? parseInt(fileSize) : undefined,
-            dominantColors: extractDominantColors(img),
-            thumbnails
+            thumbnails: null,
+            isImage: fileTypeInfo.isImage,
+            isVideo: fileTypeInfo.isVideo,
+            isAudio: fileTypeInfo.isAudio,
+            isPdf: fileTypeInfo.isPdf,
+            isText: fileTypeInfo.isText,
+            isCsv: fileTypeInfo.isCsv,
+            isDocument: fileTypeInfo.isDocument,
+            contentType: contentType
           });
           setLoading(false);
-        };
-        
-        img.onerror = () => {
-          setImageError(true);
-          setLoading(false);
-        };
-        
-        img.src = directUrl;
-        img.crossOrigin = "anonymous";
+        }
       } catch {
-        setImageError(true);
+        setFileError(true);
         setLoading(false);
       }
     }
     
-    fetchImageData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fileKey, generateThumbnailUrls, checkThumbnailExists]);
+    fetchFileData();
+  }, [fileKey, generateThumbnailUrls, checkThumbnailExists, extractDominantColors, getFileTypeFromKey]);
 
-  // Extract dominant colors from image
-  const extractDominantColors = useCallback((img: HTMLImageElement): string[] => {
-    try {
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return [];
-      
-      canvas.width = 50;
-      canvas.height = 50;
-      ctx.drawImage(img, 0, 0, 50, 50);
-      
-      // Return default color palette
-      return ['#6366f1', '#8b5cf6', '#06b6d4', '#10b981', '#f59e0b'];
-    } catch {
-      return [];
-    }
-  }, []);
-
-  // Keyboard controls
+  // Keyboard controls - only for images
   useEffect(() => {
+    if (!fileInfo?.isImage) return;
+    
     const handleKeyPress = (e: KeyboardEvent) => {
       switch (e.key) {
         case 'f':
@@ -201,71 +358,48 @@ export default function ImageViewer() {
         case 'i':
         case 'I':
           e.preventDefault();
-          setShowImageInfo(prev => !prev);
+          setShowFileInfo(prev => !prev);
           break;
       }
     };
 
     window.addEventListener('keydown', handleKeyPress);
     return () => window.removeEventListener('keydown', handleKeyPress);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isFullscreen]);
+  }, [isFullscreen, fileInfo, resetZoom, toggleFullscreen]);
 
-  // Mouse controls for zoom and pan
+  // Mouse controls for zoom and pan - only for images
   const handleWheel = useCallback((e: React.WheelEvent) => {
+    if (!fileInfo?.isImage) return;
+    
     e.preventDefault();
     const delta = e.deltaY > 0 ? -0.1 : 0.1;
     setZoom(prev => Math.max(0.25, Math.min(5, prev + delta)));
-  }, []);
+  }, [fileInfo]);
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    if (!fileInfo?.isImage) return;
+    
     if (zoom > 1) {
       setIsDragging(true);
       setDragStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
     }
-  }, [zoom, pan]);
+  }, [zoom, pan, fileInfo]);
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    if (!fileInfo?.isImage) return;
+    
     if (isDragging && zoom > 1) {
       setPan({
         x: e.clientX - dragStart.x,
         y: e.clientY - dragStart.y
       });
     }
-  }, [isDragging, dragStart, zoom]);
+  }, [isDragging, dragStart, zoom, fileInfo]);
 
   const handleMouseUp = useCallback(() => {
+    if (!fileInfo?.isImage) return;
     setIsDragging(false);
-  }, []);
-
-  const resetZoom = useCallback(() => {
-    setZoom(1);
-    setPan({ x: 0, y: 0 });
-  }, []);
-
-  const toggleFullscreen = useCallback(() => {
-    setIsFullscreen(!isFullscreen);
-    resetZoom();
-  }, [isFullscreen, resetZoom]);
-
-  const getFileTypeFromKey = (key: string) => {
-    const extension = key.split('.').pop()?.toLowerCase();
-    switch (extension) {
-      case 'jpg':
-      case 'jpeg':
-        return 'JPEG';
-      case 'png':
-        return 'PNG';
-      case 'gif':
-        return 'GIF';
-      case 'webp':
-        return 'WebP';
-      case 'svg':
-        return 'SVG';
-      default:
-        return extension?.toUpperCase() || 'Unknown';
-    }
-  };
+  }, [fileInfo]);
 
   const formatFileSize = (bytes?: number) => {
     if (!bytes) return 'Unknown';
@@ -280,23 +414,23 @@ export default function ImageViewer() {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const downloadImage = async () => {
-    if (!imageInfo) return;
+  const downloadFile = async () => {
+    if (!fileInfo) return;
     
     try {
-      const response = await fetch(imageInfo.url);
+      const response = await fetch(fileInfo.url);
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = fileKey.split('/').pop() || 'image';
+      link.download = fileKey.split('/').pop() || 'file';
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
     } catch {
       // Fallback to opening in new tab if download fails
-      window.open(imageInfo.url, '_blank');
+      window.open(fileInfo.url, '_blank');
     }
   };
 
@@ -318,21 +452,42 @@ export default function ImageViewer() {
     }
   }, []);
 
-  // Generate QR code when image info changes and QR is shown
+  // Generate QR code when file info changes and QR is shown
   useEffect(() => {
-    if (showQR && imageInfo?.url && !qrCodeUrl) {
-      generateQRCode(imageInfo.url);
+    if (showQR && fileInfo?.url && !qrCodeUrl) {
+      generateQRCode(fileInfo.url);
     }
-  }, [showQR, imageInfo?.url, qrCodeUrl, generateQRCode]);
+  }, [showQR, fileInfo?.url, qrCodeUrl, generateQRCode]);
 
-  const shareLinks = imageInfo ? [
-    { name: 'Direct Link', value: imageInfo.url, icon: '🔗' },
-    { name: 'Markdown', value: `![${fileKey}](${imageInfo.url})`, icon: '📝' },
-    { name: 'HTML', value: `<img src="${imageInfo.url}" alt="${fileKey}" />`, icon: '🌐' },
-    { name: 'BBCode', value: `[img]${imageInfo.url}[/img]`, icon: '💬' },
-    { name: 'Discord', value: imageInfo.url, icon: '💬' },
-    { name: 'Reddit', value: `[Image](${imageInfo.url})`, icon: '🔴' },
-  ] : [];
+  // Generate share links based on file type
+  const getShareLinks = useCallback(() => {
+    if (!fileInfo) return [];
+    
+    const fileName = fileKey.split('/').pop() || 'file';
+    
+    const commonLinks = [
+      { name: 'Direct Link', value: fileInfo.url, icon: '🔗' },
+      { name: 'HTML', value: `<a href="${fileInfo.url}" target="_blank">${fileName}</a>`, icon: '🌐' },
+      { name: 'BBCode', value: `[url=${fileInfo.url}]${fileName}[/url]`, icon: '💬' },
+      { name: 'Discord', value: fileInfo.url, icon: '💬' }
+    ];
+    
+    if (fileInfo.isImage) {
+      return [
+        ...commonLinks,
+        { name: 'Markdown', value: `![${fileName}](${fileInfo.url})`, icon: '📝' },
+        { name: 'Reddit', value: `![${fileName}](${fileInfo.url})`, icon: '🔴' }
+      ];
+    } else {
+      return [
+        ...commonLinks,
+        { name: 'Markdown', value: `[${fileName}](${fileInfo.url})`, icon: '📝' },
+        { name: 'Reddit', value: `[${fileName}](${fileInfo.url})`, icon: '🔴' }
+      ];
+    }
+  }, [fileInfo, fileKey]);
+
+  const shareLinks = getShareLinks();
 
   if (loading) {
     return (
@@ -346,7 +501,7 @@ export default function ImageViewer() {
     );
   }
 
-  if (imageError || !imageInfo) {
+  if (fileError || !fileInfo) {
     return (
       <div className={`min-h-screen flex items-center justify-center ${theme === 'dark' ? 'bg-[#0f0f19]' : 'bg-gray-50'}`}>
         <motion.div
@@ -358,9 +513,9 @@ export default function ImageViewer() {
               : 'bg-white border-gray-200 text-gray-900'
           }`}
         >
-          <h1 className="text-2xl font-bold mb-4">Image not found</h1>
+          <h1 className="text-2xl font-bold mb-4">File not found</h1>
           <p className={`mb-6 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-600'}`}>
-            The requested image could not be found.
+            The requested file could not be found.
           </p>
           <Link href="/" className="px-4 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg hover:from-indigo-700 hover:to-purple-700 transition-all">
             Return to Home
@@ -395,7 +550,7 @@ export default function ImageViewer() {
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 ref={imageRef}
-                src={imageInfo.url}
+                src={fileInfo.url}
                 alt={fileKey}
                 className="max-w-none transition-transform duration-200"
                 style={{
@@ -474,7 +629,7 @@ export default function ImageViewer() {
 
           {/* Main Grid */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            {/* Image Preview */}
+            {/* File Preview */}
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
@@ -486,33 +641,100 @@ export default function ImageViewer() {
                     theme === 'dark' ? 'bg-[#0f0f19]' : 'bg-white'
                   }`}>
                     <div
-                      className="relative max-w-full max-h-full flex items-center justify-center cursor-pointer"
+                      className="relative max-w-full max-h-full flex items-center justify-center"
                       style={{ height: '100%', width: '100%' }}
-                      onClick={toggleFullscreen}
-                      title="Click for fullscreen (F)"
+                      title={fileInfo?.isImage ? "Click for fullscreen (F)" : undefined}
                     >
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img 
-                        src={imageInfo.url} 
-                        alt={fileKey} 
-                        className="max-w-full max-h-full object-contain hover:scale-105 transition-transform duration-300"
-                        style={{ maxHeight: '100%', maxWidth: '100%' }}
-                      />
-                      
-                      {/* Hover Overlay */}
-                      <div className="absolute inset-0 bg-black/0 hover:bg-black/10 transition-colors duration-300 flex items-center justify-center">
-                        <div className="opacity-0 hover:opacity-100 transition-opacity duration-300 bg-black/50 text-white px-4 py-2 rounded-lg">
-                          🔍 Click for fullscreen
+                      {fileInfo?.isImage && (
+                        <>
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img 
+                            src={fileInfo.url} 
+                            alt={fileKey} 
+                            className="max-w-full max-h-full object-contain hover:scale-105 transition-transform duration-300 cursor-pointer"
+                            style={{ maxHeight: '100%', maxWidth: '100%' }}
+                            onClick={toggleFullscreen}
+                          />
+                          
+                          {/* Hover Overlay */}
+                          <div className="absolute inset-0 bg-black/0 hover:bg-black/10 transition-colors duration-300 flex items-center justify-center cursor-pointer" onClick={toggleFullscreen}>
+                            <div className="opacity-0 hover:opacity-100 transition-opacity duration-300 bg-black/50 text-white px-4 py-2 rounded-lg">
+                              🔍 Click for fullscreen
+                            </div>
+                          </div>
+                        </>
+                      )}
+
+                      {fileInfo?.isVideo && (
+                        <VideoPlayer 
+                          src={fileInfo.url} 
+                          type={fileInfo.contentType}
+                        />
+                      )}
+
+                      {fileInfo?.isAudio && (
+                        <div className="flex flex-col items-center justify-center w-full h-full">
+                          <div className="mb-6 p-4 rounded-full bg-gradient-to-r from-purple-500 to-blue-500">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-20 w-20 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+                            </svg>
+                          </div>
+                          <audio 
+                            controls 
+                            className="w-full max-w-md"
+                          >
+                            <source src={fileInfo.url} type={fileInfo.contentType} />
+                            Your browser does not support the audio element.
+                          </audio>
                         </div>
-                      </div>
+                      )}
+
+                      {(fileInfo?.isPdf || fileInfo?.isText || fileInfo?.isCsv) && (
+                        <div className="w-full h-full">
+                          {typeof window !== 'undefined' && (
+                            <div className="w-full h-full max-h-[70vh]">
+                              <DocumentViewer
+                                src={fileInfo.url}
+                                type={fileInfo.contentType}
+                                fileName={fileKey.split('/').pop()}
+                              />
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* For other file types we can't display */}
+                      {fileInfo && !fileInfo.isImage && !fileInfo.isVideo && !fileInfo.isAudio && 
+                       !fileInfo.isPdf && !fileInfo.isText && !fileInfo.isCsv && (
+                        <div className="flex flex-col items-center justify-center w-full h-full">
+                          <div className="mb-6 p-6 rounded-full bg-gradient-to-r from-purple-500 to-blue-500">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-24 w-24 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                          </div>
+                          <h3 className="text-2xl font-medium mb-2">Preview Not Available</h3>
+                          <p className="text-gray-400 mb-6">
+                            {fileKey.split('/').pop()} • {formatFileSize(fileInfo.fileSize)}
+                          </p>
+                          <button 
+                            onClick={downloadFile}
+                            className="px-6 py-3 bg-gradient-to-r from-blue-500 to-purple-500 text-white rounded-lg hover:from-blue-600 hover:to-purple-600 transition-all flex items-center"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                            </svg>
+                            Download File
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </AnimatedGradientBorder>
                 
-                {/* Image Controls */}
+                {/* File Controls */}
                 <div className="absolute top-4 right-4 flex gap-2">
                   <button
-                    onClick={() => setShowImageInfo(!showImageInfo)}
+                    onClick={() => setShowFileInfo(!showFileInfo)}
                     className={`p-2 rounded-lg transition-colors ${
                       theme === 'dark' 
                         ? 'bg-black/50 text-white hover:bg-black/70' 
@@ -522,22 +744,24 @@ export default function ImageViewer() {
                   >
                     ℹ️
                   </button>
-                  <button
-                    onClick={toggleFullscreen}
-                    className={`p-2 rounded-lg transition-colors ${
-                      theme === 'dark' 
-                        ? 'bg-black/50 text-white hover:bg-black/70' 
-                        : 'bg-white/90 text-gray-800 hover:bg-white'
-                    }`}
-                    title="Fullscreen (F)"
-                  >
-                    ⛶
-                  </button>
+                  {fileInfo.isImage && (
+                    <button
+                      onClick={toggleFullscreen}
+                      className={`p-2 rounded-lg transition-colors ${
+                        theme === 'dark' 
+                          ? 'bg-black/50 text-white hover:bg-black/70' 
+                          : 'bg-white/90 text-gray-800 hover:bg-white'
+                      }`}
+                      title="Fullscreen (F)"
+                    >
+                      ⛶
+                    </button>
+                  )}
                 </div>
               </div>
 
-              {/* Thumbnails Section - Below Image */}
-              {imageInfo.thumbnails && (
+              {/* Thumbnails Section - Below Image - Only for images */}
+              {fileInfo.thumbnails && fileInfo.isImage && (
                 <motion.div
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
@@ -549,7 +773,7 @@ export default function ImageViewer() {
                       theme === 'dark' ? 'bg-[#0f0f19]' : 'bg-white'
                     }`}>
                       <ThumbnailLinks 
-                        thumbnails={imageInfo.thumbnails}
+                        thumbnails={fileInfo.thumbnails}
                         copied={copied}
                         copyToClipboard={copyToClipboard}
                       />
@@ -567,7 +791,7 @@ export default function ImageViewer() {
             >
               {/* File Details */}
               <AnimatePresence>
-                {showImageInfo && (
+                {showFileInfo && (
                   <motion.div
                     initial={{ opacity: 0, height: 0 }}
                     animate={{ opacity: 1, height: 'auto' }}
@@ -598,7 +822,7 @@ export default function ImageViewer() {
                             Type
                           </h3>
                           <p className={`font-medium ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-                            {imageInfo.type}
+                            {fileInfo.type}
                           </p>
                         </div>
                         
@@ -607,18 +831,18 @@ export default function ImageViewer() {
                             Size
                           </h3>
                           <p className={`font-medium ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-                            {formatFileSize(imageInfo.fileSize)}
+                            {formatFileSize(fileInfo.fileSize)}
                           </p>
                         </div>
                       </div>
                       
-                                             {imageInfo.width && imageInfo.height && (
+                                             {fileInfo.width && fileInfo.height && (
                          <div>
                            <h3 className={`text-sm font-medium mb-1 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
                              Dimensions
                            </h3>
                            <p className={`font-medium ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-                             {imageInfo.width} × {imageInfo.height} px
+                             {fileInfo.width} × {fileInfo.height} px
                            </p>
                          </div>
                        )}
@@ -641,8 +865,8 @@ export default function ImageViewer() {
                     onClick={() => {
                       const newShowQR = !showQR;
                       setShowQR(newShowQR);
-                      if (newShowQR && imageInfo?.url && !qrCodeUrl) {
-                        generateQRCode(imageInfo.url);
+                      if (newShowQR && fileInfo?.url && !qrCodeUrl) {
+                        generateQRCode(fileInfo.url);
                       }
                     }}
                     className={`p-2 rounded-lg transition-colors ${
@@ -752,14 +976,14 @@ export default function ImageViewer() {
               {/* Download Options */}
               <div className="space-y-3">
                 <button
-                  onClick={downloadImage}
+                  onClick={downloadFile}
                   className="block w-full py-3 px-4 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-medium rounded-lg text-center transition-all transform hover:scale-105"
                 >
                   💾 Download Original
                 </button>
                
                <button
-                 onClick={() => window.open(imageInfo.url, '_blank')}
+                 onClick={() => window.open(fileInfo.url, '_blank')}
                  className={`w-full py-3 px-4 font-medium rounded-lg text-center transition-all transform hover:scale-105 ${
                    theme === 'dark' 
                      ? 'bg-gray-700 text-white hover:bg-gray-600' 

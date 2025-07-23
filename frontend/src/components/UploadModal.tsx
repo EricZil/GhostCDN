@@ -91,15 +91,8 @@ export default function UploadModal({ isOpen, onClose, initialFile = null, onOpe
       return;
     }
     
-    if (!newFile.type.startsWith('image/')) {
-      setNotification({
-        isVisible: true,
-        type: 'error',
-        title: 'Invalid File Type',
-        message: 'Please upload an image file (JPEG, PNG, WebP, GIF)'
-      });
-      return;
-    }
+    // Accept all file types - no restrictions
+    // File type validation removed to allow any file type
     
     const guestLimit = (settings?.guestUploadLimit || 10) * 1024 * 1024;
     const userLimit = (settings?.maxFileSize || 100) * 1024 * 1024;
@@ -141,13 +134,16 @@ export default function UploadModal({ isOpen, onClose, initialFile = null, onOpe
       };
       img.src = result;
       
-      if (optimizeImage) {
+      if (optimizeImage && newFile.type.startsWith('image/')) {
         try {
           const estimate = estimateOptimization(newFile);
           setOptimizationPreview(estimate);
         } catch {
           // Handle estimation error silently
         }
+      } else {
+        // No optimization preview for non-image files
+        setOptimizationPreview(null);
       }
     };
     reader.readAsDataURL(newFile);
@@ -383,4 +379,4 @@ export default function UploadModal({ isOpen, onClose, initialFile = null, onOpe
       )}
     </AnimatePresence>
   );
-} 
+}

@@ -3,7 +3,8 @@
  * Implements CSP headers and other security measures
  */
 
-const helmet = require('helmet');
+// Import helmet with destructuring to get the default export
+const helmet = require('helmet').default;
 
 // Content Security Policy configuration
 const cspConfig = {
@@ -57,7 +58,7 @@ const cspConfig = {
   reportOnly: process.env.NODE_ENV === 'development' // Only report in development
 };
 
-// Security headers configuration
+// Security headers configuration - using helmet as a function
 const securityHeaders = helmet({
   contentSecurityPolicy: cspConfig,
   crossOriginEmbedderPolicy: false, // Disable for file uploads

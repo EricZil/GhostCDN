@@ -1,4 +1,5 @@
 const storageService = require('../services/storage.service');
+const prisma = require('../lib/prisma');
 
 class UploadController {
   /**
@@ -52,6 +53,49 @@ class UploadController {
   }
   
   /**
+   * Calculate user's current storage usage
+   * @param {string} userId - User ID
+   * @returns {Promise<number>} - Total storage used in bytes
+   */
+  async calculateUserStorageUsage(userId) {
+    const storageUsed = await prisma.image.aggregate({
+      where: { userId },
+      _sum: { fileSize: true }
+    });
+    return storageUsed._sum.fileSize || 0;
+  }
+
+  /**
+   * Check if user has enough storage quota for upload
+   * @param {string} userId - User ID
+   * @param {number} fileSize - Size of file to upload
+   * @param {number} storageLimit - User's storage limit in bytes
+   * @returns {Promise<Object>} - Validation result
+   */
+  async validateUserStorageQuota(userId, fileSize, storageLimit) {
+    const currentUsage = await this.calculateUserStorageUsage(userId);
+    const newTotal = currentUsage + fileSize;
+    
+    if (newTotal > storageLimit) {
+      const availableSpace = storageLimit - currentUsage;
+      return {
+        valid: false,
+        currentUsage,
+        storageLimit,
+        availableSpace,
+        message: `Upload would exceed storage limit. Available: ${(availableSpace / (1024 * 1024)).toFixed(2)}MB, Required: ${(fileSize / (1024 * 1024)).toFixed(2)}MB`
+      };
+    }
+    
+    return {
+      valid: true,
+      currentUsage,
+      storageLimit,
+      availableSpace: storageLimit - newTotal
+    };
+  }
+
+  /**
    * Generate a presigned URL for registered user uploads
    * @param {Object} req - Express request object
    * @param {Object} res - Express response object
@@ -67,14 +111,50 @@ class UploadController {
         });
       }
       
-      // Validate file size for registered users (100MB limit)
-      const maxSize = 100 * 1024 * 1024; // 100MB
-      if (fileSize > maxSize) {
-        return res.status(400).json({
+      // Check if user is authenticated
+      if (!req.user) {
+        return res.status(401).json({
           success: false,
-          message: `File size exceeds the limit of ${maxSize / (1024 * 1024)}MB for user uploads`
+          message: 'Authentication required for user uploads'
         });
       }
+      
+      // Check if this is a CLI request (has API key authentication)
+      const isCliRequest = req.headers.authorization && req.headers.authorization.startsWith('Bearer ') && req.headers.authorization.length > 50;
+      
+      // Store CLI detection for later use
+      req.isCliUpload = isCliRequest;
+      
+      // Validate file size - unlimited for CLI, 100MB for web
+      if (!isCliRequest) {
+        const maxSize = 100 * 1024 * 1024; // 100MB for web
+        if (fileSize > maxSize) {
+          return res.status(400).json({
+            success: false,
+            message: `File size exceeds the limit of ${maxSize / (1024 * 1024)}MB for web uploads`
+          });
+        }
+      }
+      // No file size limit for CLI uploads
+      
+      // Check user storage quota (10GB limit) - bypass for CLI uploads
+      if (!isCliRequest) {
+        const storageLimit = 10 * 1024 * 1024 * 1024; // 10GB in bytes
+        const quotaValidation = await this.validateUserStorageQuota(req.user.id, fileSize, storageLimit);
+        
+        if (!quotaValidation.valid) {
+          return res.status(400).json({
+            success: false,
+            message: quotaValidation.message,
+            quota: {
+              currentUsage: quotaValidation.currentUsage,
+              storageLimit: quotaValidation.storageLimit,
+              availableSpace: quotaValidation.availableSpace
+            }
+          });
+        }
+      }
+      // No storage quota limit for CLI uploads
       
       // Extract upload settings from the request body
       const uploadOptions = {
@@ -84,10 +164,9 @@ class UploadController {
         generateThumbnails: req.body.generateThumbnails === 'true' || req.body.generateThumbnails === true, // Default to false if not specified
       };
       
-      // Here we would verify the user is authenticated
-      // For now, we'll assume the user is authenticated if they hit this endpoint
+      // Use the authenticated user's r2FolderName for the upload path
       const fileInfo = { filename, contentType, fileSize };
-      const result = await storageService.getPresignedUrl(fileInfo, true, null, uploadOptions);
+      const result = await storageService.getPresignedUrl(fileInfo, true, req.user.r2FolderName, uploadOptions);
       
       return res.status(200).json({
         success: true,
@@ -110,14 +189,17 @@ class UploadController {
    */
   async completeGuestUpload(req, res) {
     try {
-      const { fileKey } = req.params;
+      const { fileKey: encodedFileKey } = req.params;
       
-      if (!fileKey) {
+      if (!encodedFileKey) {
         return res.status(400).json({
           success: false,
           message: 'Missing file key'
         });
       }
+      
+      // Decode the URL-encoded fileKey
+      const fileKey = decodeURIComponent(encodedFileKey);
       
       // Extract post-processing options from the request body
       const options = {
@@ -149,14 +231,17 @@ class UploadController {
    */
   async completeUserUpload(req, res) {
     try {
-      const { fileKey } = req.params;
+      const { fileKey: encodedFileKey } = req.params;
       
-      if (!fileKey) {
+      if (!encodedFileKey) {
         return res.status(400).json({
           success: false,
           message: 'Missing file key'
         });
       }
+      
+      // Decode the URL-encoded fileKey
+      const fileKey = decodeURIComponent(encodedFileKey);
       
       // Extract post-processing options from the request body
       const options = {
@@ -165,9 +250,15 @@ class UploadController {
       
       // Debug: console.log('Complete user upload options:', options);
       
-      // Here we would verify the user is authenticated
-      // For now, we'll assume the user is authenticated if they hit this endpoint
-      const result = await storageService.completeDirectUpload(fileKey, true, options);
+      // Check if user is authenticated
+      if (!req.user) {
+        return res.status(401).json({
+          success: false,
+          message: 'Authentication required for user uploads'
+        });
+      }
+      
+      const result = await storageService.completeDirectUpload(fileKey, true, options, req.user, req.isCliUpload);
       
       return res.status(200).json({
         success: true,
@@ -190,20 +281,20 @@ class UploadController {
    */
   async deleteFile(req, res) {
     try {
-      const { fileKey } = req.params;
+      const { fileKey: encodedFileKey } = req.params;
       
-      if (!fileKey) {
+      if (!encodedFileKey) {
         return res.status(400).json({
           success: false,
           message: 'Missing file key'
         });
       }
       
-      // Determine if the user is registered based on the request
-      // For now, we'll assume all delete requests are from registered users
-      const isRegisteredUser = true;
+      // Decode the URL-encoded fileKey
+      const fileKey = decodeURIComponent(encodedFileKey);
       
-      await storageService.deleteFile(fileKey, isRegisteredUser);
+      // Call deleteFile without the second parameter
+      await storageService.deleteFile(fileKey);
       
       return res.status(200).json({
         success: true,
@@ -219,4 +310,4 @@ class UploadController {
   }
 }
 
-module.exports = new UploadController(); 
+module.exports = new UploadController();

@@ -9,10 +9,15 @@ const prisma = require('../lib/prisma');
 
 
 const validateNextAuthJWT = async (req, res, next) => {
-  try {
+  try { 
     const authHeader = req.headers.authorization;
-    const token = req.body.token || req.query.token || (authHeader && authHeader.startsWith('Bearer ') ? authHeader.substring(7) : null);
-    
+    let token = null;
+    try {
+      token = req.body?.token || req.query?.token || (authHeader && authHeader.startsWith('Bearer ') ? authHeader.substring(7) : null);
+    } catch (tokenError) {
+      throw tokenError;
+    }
+        
     if (!token) {
       return res.status(401).json({
         success: false,
@@ -23,7 +28,6 @@ const validateNextAuthJWT = async (req, res, next) => {
     // Verify the NextAuth token
     const jwtSecret = process.env.NEXTAUTH_SECRET;
     if (!jwtSecret) {
-      console.error('NEXTAUTH_SECRET not configured');
       return res.status(500).json({
         success: false,
         message: 'Server configuration error'

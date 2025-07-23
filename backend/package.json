@@ -8,14 +8,17 @@
     "dev": "nodemon src/index.js",
     "generate-api-key": "node scripts/generate-api-key.js",
     "test": "jest",
+    "typecheck": "tsc --noEmit",
     "postinstall": "prisma generate"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.450.0",
     "@aws-sdk/lib-storage": "^3.450.0",
     "@aws-sdk/s3-request-presigner": "^3.837.0",
-    "@prisma/client": "^6.10.1",
+    "@prisma/client": "^6.12.0",
+    "@tanstack/react-query": "^5.83.0",
     "@upstash/redis": "^1.35.0",
+    "archiver": "^7.0.1",
     "aws-sdk": "^2.1499.0",
     "bcrypt": "^6.0.0",
     "body-parser": "^2.2.0",
@@ -30,14 +33,16 @@
     "morgan": "^1.10.0",
     "node-cron": "^3.0.3",
     "nodemailer": "^7.0.4",
-    "prisma": "^6.10.1",
     "sharp": "^0.34.2",
     "uuid": "^11.1.0",
     "winston": "^3.17.0"
   },
   "devDependencies": {
+    "@types/mongoose": "^5.11.97",
     "jest": "^30.0.3",
-    "nodemon": "^3.0.1"
+    "nodemon": "^3.0.1",
+    "prisma": "^6.12.0",
+    "typescript": "^5.3.3"
   },
   "engines": {
     "node": ">=18.0.0",

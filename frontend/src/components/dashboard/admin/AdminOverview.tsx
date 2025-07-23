@@ -18,7 +18,6 @@ interface AdminStats {
   totalFiles: number;
   filesThisWeek: number;
   totalStorage: number;
-  totalBandwidth: number;
   systemHealth?: Record<string, SystemHealth>;
   recentActivity?: AdminActivity[];
 }
@@ -98,18 +97,10 @@ export default function AdminOverview({
             icon: '💾', 
             color: 'from-purple-500 to-pink-500' 
           },
-          { 
-            label: 'Bandwidth', 
-            value: adminFormatFileSize(adminStats.totalBandwidth), 
-            change: 'Growing', 
-            icon: '🌐', 
-            color: 'from-orange-500 to-red-500' 
-          },
         ] : [
           { label: 'Total Users', value: '...', change: '...', icon: '👥', color: 'from-blue-500 to-cyan-500' },
           { label: 'Total Files', value: '...', change: '...', icon: '📁', color: 'from-green-500 to-emerald-500' },
           { label: 'Storage Used', value: '...', change: '...', icon: '💾', color: 'from-purple-500 to-pink-500' },
-          { label: 'Bandwidth', value: '...', change: '...', icon: '🌐', color: 'from-orange-500 to-red-500' },
         ]).map((stat, index) => (
           <div key={index} className="bg-[rgba(20,20,35,0.8)] rounded-2xl p-6 border border-gray-700/50 shadow-xl backdrop-blur-sm hover:scale-105 transition-all duration-300">
             <div className="flex items-center justify-between mb-4">
@@ -190,4 +181,4 @@ export default function AdminOverview({
       </div>
     </div>
   );
-} 
+}

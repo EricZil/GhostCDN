@@ -2,10 +2,27 @@
 
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useNotification } from '@/contexts/NotificationContext';
+
+interface Upload {
+  id: string;
+  fileKey: string;
+  fileName: string;
+  fileSize: number;
+  fileType: string;
+  uploadedAt: string;
+
+  thumbnails?: {
+    small: string;
+    medium: string;
+    large: string;
+  } | null;
+}
 
 interface BulkActionsProps {
   selectedFiles: string[];
   totalFiles: number;
+  uploads: Upload[];
   onSelectAll: () => void;
   onDeselectAll: () => void;
   onBulkDelete: (fileIds: string[]) => Promise<void>;
@@ -16,6 +33,7 @@ interface BulkActionsProps {
 export default function BulkActions({
   selectedFiles,
   totalFiles,
+  uploads,
   onSelectAll,
   onDeselectAll,
   onBulkDelete,
@@ -25,9 +43,9 @@ export default function BulkActions({
   const [isDeleting, setIsDeleting] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
   const [showConfirmDelete, setShowConfirmDelete] = useState(false);
+  const { showNotification } = useNotification();
 
   const isAllSelected = selectedFiles.length === totalFiles && totalFiles > 0;
-  const isSomeSelected = selectedFiles.length > 0;
 
   const handleBulkDelete = async () => {
     if (selectedFiles.length === 0) return;
@@ -56,18 +74,9 @@ export default function BulkActions({
     }
   };
 
-  if (!isSomeSelected) {
-    return null;
-  }
-
   return (
     <>
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: 20 }}
-        className="bg-gradient-to-r from-purple-600/20 to-pink-600/20 border border-purple-500/30 rounded-xl p-4 backdrop-blur-sm"
-      >
+      <div className="bg-gradient-to-r from-purple-600/20 to-pink-600/20 border border-purple-500/30 rounded-xl p-4 backdrop-blur-sm">
         <div className="flex items-center justify-between">
           {/* Selection Info */}
           <div className="flex items-center gap-4">
@@ -112,13 +121,34 @@ export default function BulkActions({
 
             {/* Copy Links */}
             <button
-              onClick={() => {
-                // Implementation for copying multiple links
-                navigator.clipboard.writeText(
-                  selectedFiles.map(id => `${window.location.origin}/view/${id}`).join('\n')
-                );
-              }}
-              disabled={isLoading}
+                onClick={async () => {
+                  try {
+                    // Get the actual file data for selected files
+                    const selectedFileData = uploads.filter(upload => selectedFiles.includes(upload.id));
+                    
+                    // Create proper shareable URLs using fileKey
+                    const links = selectedFileData.map(file => 
+                      `${window.location.origin}/view/${file.fileKey}`
+                    );
+                    
+                    await navigator.clipboard.writeText(links.join('\n'));
+                    
+                    showNotification({
+                      type: 'success',
+                      title: 'Links Copied',
+                      message: `${selectedFiles.length} shareable link${selectedFiles.length !== 1 ? 's' : ''} copied to clipboard`,
+                      duration: 3000
+                    });
+                  } catch {
+                    showNotification({
+                      type: 'error',
+                      title: 'Copy Failed',
+                      message: 'Failed to copy links to clipboard',
+                      duration: 4000
+                    });
+                  }
+                }}
+                disabled={isLoading}
               className="px-4 py-2 bg-green-500/20 hover:bg-green-500/30 text-green-300 rounded-lg border border-green-500/30 transition-all duration-200 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -155,7 +185,7 @@ export default function BulkActions({
             </button>
           </div>
         </div>
-      </motion.div>
+      </div>
 
       {/* Delete Confirmation Modal */}
       <AnimatePresence>
@@ -223,4 +253,4 @@ export default function BulkActions({
       </AnimatePresence>
     </>
   );
-} 
+}
