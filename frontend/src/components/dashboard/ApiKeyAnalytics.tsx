@@ -150,16 +150,7 @@ export default function ApiKeyAnalytics({ period, onPeriodChange }: ApiKeyAnalyt
     }
   }, [showNotification, period, getAuthHeaders]);
 
-  // Auto-refresh analytics every 5 minutes to prevent rate limiting
-  useEffect(() => {
-    if (!selectedKeyId) return;
 
-    const interval = setInterval(() => {
-      fetchAnalytics(selectedKeyId);
-    }, 300000); // 5 minutes
-
-    return () => clearInterval(interval);
-  }, [selectedKeyId, period, fetchAnalytics]);
 
   // Initial load
   useEffect(() => {
