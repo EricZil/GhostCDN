@@ -164,7 +164,7 @@ export default function ApiKeyAnalytics({ period, onPeriodChange }: ApiKeyAnalyt
     if (selectedKeyId) {
       fetchAnalytics(selectedKeyId);
     }
-  }, [selectedKeyId, period, fetchAnalytics]);
+  }, [selectedKeyId, period]); // Removed fetchAnalytics from dependencies to prevent infinite loop
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-US', {
