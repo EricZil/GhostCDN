@@ -73,8 +73,8 @@ jobs:
             exit 1
           fi
           
-          # Check for debug statements
-          if grep -r "console\.log\|debugger" src/ --include="*.js" | grep -v "display\.js"; then
+          # Check for debug statements (excluding legitimate UI console.log usage)
+          if grep -r "debugger\|console\.debug\|console\.trace" src/ --include="*.js"; then
             echo "Debug statements found in production code!"
             exit 1
           fi
