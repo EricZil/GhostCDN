@@ -1,46 +1,15 @@
 "use client";
 
 import { useState } from 'react';
-import { useAuth } from '@/contexts/AuthContext';
 import { signIn } from 'next-auth/react';
-import EmailVerificationModal from './EmailVerificationModal';
-import ForgotPasswordModal from './ForgotPasswordModal';
 
 export default function LoginForm() {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [rememberMe, setRememberMe] = useState(false);
-  const { login, isLoading } = useAuth();
   const [localError, setLocalError] = useState('');
-  const [showVerificationModal, setShowVerificationModal] = useState(false);
-  const [showForgotPasswordModal, setShowForgotPasswordModal] = useState(false);
-  const [isBanned, setIsBanned] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLocalError('');
-    setShowVerificationModal(false);
-    setIsBanned(false);
-    
-    try {
-      await login(email, password);
-      // Success is handled by the AuthContext which updates the session
-    } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      if (errorMessage.includes('verify your email')) {
-        setShowVerificationModal(true);
-      } else if (errorMessage.includes('Account Banned')) {
-        setIsBanned(true);
-        setLocalError('Your account has been suspended. Please contact support for assistance.');
-      } else {
-        setLocalError('Login failed. Please check your credentials and try again.');
-      }
-    }
-  };
+
 
   const handleGoogleLogin = async () => {
     setLocalError('');
-    setIsBanned(false);
     try {
       await signIn('google', { redirect: false });
     } catch {
@@ -50,7 +19,6 @@ export default function LoginForm() {
 
   const handleGitHubLogin = async () => {
     setLocalError('');
-    setIsBanned(false);
     try {
       await signIn('github', { redirect: false });
     } catch {
