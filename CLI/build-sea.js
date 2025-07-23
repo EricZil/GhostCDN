@@ -48,6 +48,15 @@ function buildExecutable() {
     
     log(`Building for platform: ${targetPlatform}`);
     
+    // Bundle the application with esbuild first
+    log('Bundling application with dependencies...');
+    const bundledFile = path.join(config.outputDir, 'bundled-app.js');
+    
+    execSync(`npx esbuild ${config.entryPoint} --bundle --platform=node --target=node21 --outfile=${bundledFile} --format=cjs --external:fsevents --main-fields=main,module --conditions=node`, { stdio: 'inherit' });
+    
+    // Update config to use bundled file
+    config.entryPoint = bundledFile;
+    
     // Create SEA configuration
     createSeaConfig();
     
@@ -101,6 +110,8 @@ function buildExecutable() {
     // Clean up temporary files
     fs.unlinkSync('sea-config.json');
     fs.unlinkSync(blobPath);
+    // Keep bundled file for debugging
+    // fs.unlinkSync(bundledFile);
     
     log(`✅ Successfully built: ${outputPath}`);
     

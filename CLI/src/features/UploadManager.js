@@ -1,8 +1,51 @@
 const fs = require('fs');
 const path = require('path');
-const inquirer = require('inquirer');
-const chalk = require('chalk');
-const ora = require('ora');
+const readline = require('readline');
+// Simple color functions to replace chalk
+const colors = {
+  red: (text) => `\x1b[31m${text}\x1b[0m`,
+  yellow: (text) => `\x1b[33m${text}\x1b[0m`,
+  cyan: (text) => `\x1b[36m${text}\x1b[0m`,
+  dim: (text) => `\x1b[2m${text}\x1b[0m`,
+  green: (text) => `\x1b[32m${text}\x1b[0m`,
+  blue: (text) => `\x1b[34m${text}\x1b[0m`,
+  white: (text) => `\x1b[37m${text}\x1b[0m`,
+  magenta: (text) => `\x1b[35m${text}\x1b[0m`,
+  bold: (text) => `\x1b[1m${text}\x1b[0m`
+};
+// Add chainable methods for compatibility
+colors.cyan.bold = (text) => `\x1b[1m\x1b[36m${text}\x1b[0m`;
+const chalk = colors;
+// Simple spinner implementation to replace ora
+const createSpinner = (text) => {
+  const frames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+  let i = 0;
+  let interval;
+  
+  return {
+    start: function() {
+       process.stdout.write(`${frames[0]} ${text}`);
+       interval = setInterval(() => {
+         process.stdout.write(`\r${frames[i]} ${text}`);
+         i = (i + 1) % frames.length;
+       }, 80);
+       return this;
+     },
+    succeed: (message) => {
+      clearInterval(interval);
+      process.stdout.write(`\r✅ ${message || text}\n`);
+    },
+    fail: (message) => {
+      clearInterval(interval);
+      process.stdout.write(`\r❌ ${message || text}\n`);
+    },
+    stop: () => {
+      clearInterval(interval);
+      process.stdout.write('\r');
+    }
+  };
+};
+const ora = createSpinner;
 const axios = require('axios');
 const FormData = require('form-data');
 const mimeTypes = require('mime-types');
@@ -80,13 +123,16 @@ class UploadManager {
       
       // Don't return to main menu on error - let user read the error
       console.log(chalk.yellow('\nPress Enter to continue...'));
-      await require('inquirer').prompt([
-        {
-          type: 'input',
-          name: 'continue',
-          message: ''
-        }
-      ]);
+      const rl = readline.createInterface({
+        input: process.stdin,
+        output: process.stdout
+      });
+      await new Promise((resolve) => {
+        rl.question('', () => {
+          rl.close();
+          resolve();
+        });
+      });
     }
   }
 
@@ -112,19 +158,29 @@ class UploadManager {
       }
     ];
 
-    const methodAnswer = await inquirer.prompt([
-      {
-        type: 'list',
-        name: 'method',
-        message: 'How would you like to select your file?',
-        choices: methods.map(method => ({
-          name: `${method.name}\n  ${chalk.dim(method.description)}`,
-          value: method.value,
-          short: method.name
-        })),
-        pageSize: 5
-      }
-    ]);
+    console.log(chalk.cyan('How would you like to select your file?\n'));
+    methods.forEach((method, index) => {
+      console.log(`${index + 1}. ${method.name}`);
+      console.log(`   ${chalk.dim(method.description)}`);
+    });
+    console.log();
+
+    const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout
+    });
+
+    const methodAnswer = await new Promise((resolve) => {
+      rl.question('Enter your choice (1-3): ', (answer) => {
+        rl.close();
+        const choice = parseInt(answer.trim());
+        if (choice >= 1 && choice <= 3) {
+          resolve({ method: methods[choice - 1].value });
+        } else {
+          resolve({ method: 'back' });
+        }
+      });
+    });
 
     if (methodAnswer.method === 'back') {
       return null;
@@ -197,7 +253,7 @@ class UploadManager {
           value: 'current',
           disabled: true
         },
-        new inquirer.Separator(),
+        // Separator
         {
           name: '⬆️  Go up one level',
           value: 'up',
@@ -221,15 +277,10 @@ class UploadManager {
         });
       }
 
-      const answer = await inquirer.prompt([
-        {
-          type: 'list',
-          name: 'selection',
-          message: 'Select a file or navigate:',
-          choices,
-          pageSize: 15
-        }
-      ]);
+      // Simplified directory browsing - just show manual input option
+      console.log(chalk.cyan('Directory browsing not available in this mode.'));
+      console.log('Please enter the file path manually.');
+      return await this.getFilePathManually();
 
       if (answer.selection === 'up') {
         const parentDir = path.dirname(currentDir);
@@ -263,33 +314,37 @@ class UploadManager {
    * Get file path manually from user input
    */
   async getFilePathManually() {
-    const answer = await inquirer.prompt([
-      {
-        type: 'input',
-        name: 'filePath',
-        message: 'Enter the full path to your file:',
-        validate: (input) => {
-          if (!input || input.trim().length === 0) {
-            return 'File path is required';
-          }
-          
-          const filePath = input.trim();
-          
-          if (!fs.existsSync(filePath)) {
-            return 'File does not exist. Please check the path and try again.';
-          }
-          
-          const stats = fs.statSync(filePath);
-          if (!stats.isFile()) {
-            return 'Path must point to a file, not a directory.';
-          }
-          
-          return true;
-        }
-      }
-    ]);
+    const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout
+    });
 
-    return this.sanitizeFilePath(answer.filePath.trim());
+    const answer = await new Promise((resolve) => {
+      rl.question('Enter the full path to your file: ', (input) => {
+        rl.close();
+        resolve({ filePath: input });
+      });
+    });
+
+    const filePath = answer.filePath.trim();
+    
+    if (!filePath || filePath.length === 0) {
+      showError('File path is required');
+      return null;
+    }
+    
+    if (!fs.existsSync(filePath)) {
+      showError('File does not exist. Please check the path and try again.');
+      return null;
+    }
+    
+    const stats = fs.statSync(filePath);
+    if (!stats.isFile()) {
+      showError('Path must point to a file, not a directory.');
+      return null;
+    }
+
+    return this.sanitizeFilePath(filePath);
   }
 
   /**
@@ -414,7 +469,13 @@ class UploadManager {
         }
       ];
 
-      const options = await inquirer.prompt(prompts);
+      // Use saved options directly for simplicity
+      const options = {
+        preserveFilename: savedOptions.preserveFilename,
+        optimize: savedOptions.optimize,
+        generateThumbnails: savedOptions.generateThumbnails,
+        customName: savedOptions.customName || ''
+      };
       
       // All files are public by default
       options.isPublic = true;
@@ -626,15 +687,28 @@ class UploadManager {
       }
     ];
 
-    const action = await inquirer.prompt([
-      {
-        type: 'list',
-        name: 'action',
-        message: 'What would you like to do next?',
-        choices: actions,
-        pageSize: 5
-      }
-    ]);
+    console.log(chalk.cyan('\nWhat would you like to do next?\n'));
+    actions.forEach((action, index) => {
+      console.log(`${index + 1}. ${action.name}`);
+    });
+    console.log();
+
+    const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout
+    });
+
+    const action = await new Promise((resolve) => {
+      rl.question('Enter your choice (1-4): ', (answer) => {
+        rl.close();
+        const choice = parseInt(answer.trim());
+        if (choice >= 1 && choice <= 4) {
+          resolve({ action: actions[choice - 1].value });
+        } else {
+          resolve({ action: 'back' });
+        }
+      });
+    });
 
     switch (action.action) {
       case 'copy':
