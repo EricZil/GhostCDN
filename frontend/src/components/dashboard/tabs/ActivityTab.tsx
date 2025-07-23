@@ -24,7 +24,6 @@ export const ActivityTab: React.FC<ActivityTabProps> = ({
     switch (type) {
       case 'UPLOAD': return '📤';
       case 'DELETE': return '🗑️';
-      case 'VIEW': return '👁️';
       case 'DOWNLOAD': return '⬇️';
       case 'SHARE': return '🔗';
       case 'MILESTONE_REACHED': return '🏆';
@@ -70,14 +69,10 @@ export const ActivityTab: React.FC<ActivityTabProps> = ({
           <div className="space-y-3">
             {(dashboardStats ? [
               { label: 'Uploads', value: dashboardStats.uploadsThisMonth.toString(), color: 'text-green-400' },
-              { label: 'Views', value: dashboardStats.totalViews.toLocaleString(), color: 'text-blue-400' },
               { label: 'Storage Used', value: formatFileSize(dashboardStats.storageUsed), color: 'text-purple-400' },
-              { label: 'Bandwidth', value: formatFileSize(dashboardStats.bandwidthUsed), color: 'text-orange-400' },
             ] : [
               { label: 'Uploads', value: '...', color: 'text-green-400' },
-              { label: 'Views', value: '...', color: 'text-blue-400' },
               { label: 'Storage Used', value: '...', color: 'text-purple-400' },
-              { label: 'Bandwidth', value: '...', color: 'text-orange-400' },
             ]).map((stat, index) => (
               <div key={index} className="flex justify-between items-center">
                 <span className="text-gray-300">{stat.label}</span>
@@ -92,14 +87,10 @@ export const ActivityTab: React.FC<ActivityTabProps> = ({
           <div className="space-y-3">
             {(dashboardStats ? [
               { label: 'Total Uploads', value: dashboardStats.totalUploads.toString(), color: 'text-green-400' },
-              { label: 'Total Views', value: dashboardStats.totalViews.toLocaleString(), color: 'text-blue-400' },
               { label: 'Storage Used', value: formatFileSize(dashboardStats.storageUsed), color: 'text-purple-400' },
-              { label: 'Total Bandwidth', value: formatFileSize(dashboardStats.bandwidthUsed), color: 'text-orange-400' },
             ] : [
               { label: 'Total Uploads', value: '...', color: 'text-green-400' },
-              { label: 'Total Views', value: '...', color: 'text-blue-400' },
               { label: 'Storage Used', value: '...', color: 'text-purple-400' },
-              { label: 'Total Bandwidth', value: '...', color: 'text-orange-400' },
             ]).map((stat, index) => (
               <div key={index} className="flex justify-between items-center">
                 <span className="text-gray-300">{stat.label}</span>

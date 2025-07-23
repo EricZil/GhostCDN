@@ -3,7 +3,7 @@ import React from 'react';
 interface AdminFile {
   fileName: string;
   fileSize: number;
-  viewCount?: number;
+
   uploadedAt: string;
   owner?: {
     name: string;
@@ -127,10 +127,7 @@ export const AdminFilesTab: React.FC<AdminFilesTabProps> = ({
                         <p className="text-sm text-white">{adminFormatFileSize(file.fileSize)}</p>
                         <p className="text-xs text-gray-400">Size</p>
                       </div>
-                      <div className="text-center">
-                        <p className="text-sm text-white">{file.viewCount || 0}</p>
-                        <p className="text-xs text-gray-400">Views</p>
-                      </div>
+
                       <div className="text-center">
                         <p className="text-sm text-white">{adminFormatTimeAgo(file.uploadedAt)}</p>
                         <p className="text-xs text-gray-400">Uploaded</p>

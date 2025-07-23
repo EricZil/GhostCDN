@@ -23,7 +23,6 @@ interface UserProfile {
     fileSize: number;
     fileType: string;
     uploadedAt: string;
-    viewCount: number;
   }>;
   activities: Array<{
     id: string;
@@ -36,14 +35,7 @@ interface UserProfile {
     provider: string;
     type: string;
   }>;
-  recentAnalytics: Array<{
-    event: string;
-    createdAt: string;
-    image: {
-      fileName: string;
-      fileKey: string;
-    };
-  }>;
+
   banInfo?: {
     banType: string;
     reason: string;
@@ -475,7 +467,6 @@ export default function UserProfileModal({
                                 </div>
                               </div>
                               <div className="text-right">
-                                <p className="text-sm text-white">{upload.viewCount} views</p>
                                 <button className="text-blue-400 hover:text-blue-300 text-sm">
                                   View File
                                 </button>
@@ -526,28 +517,14 @@ export default function UserProfileModal({
 
                   {activeTab === 'security' && (
                     <div className="space-y-6">
-                      <h3 className="text-2xl font-semibold text-white">Security & Analytics</h3>
+                      <h3 className="text-2xl font-semibold text-white">Security</h3>
                       
                       <div className="bg-[rgba(20,20,35,0.6)] rounded-xl p-6 border border-gray-800/40">
-                        <h4 className="text-lg font-semibold text-white mb-4">Recent File Views</h4>
+                        <h4 className="text-lg font-semibold text-white mb-4">Account Security</h4>
                         <div className="space-y-3">
-                          {profile.recentAnalytics.map((analytic, index) => (
-                            <div key={index} className="flex items-center justify-between p-3 bg-[rgba(15,15,25,0.5)] rounded-lg">
-                              <div>
-                                <p className="text-white">{analytic.image.fileName}</p>
-                                <p className="text-sm text-gray-400">{analytic.event}</p>
-                              </div>
-                              <span className="text-sm text-gray-400">
-                                {formatTimeAgo(analytic.createdAt)}
-                              </span>
-                            </div>
-                          ))}
-                          
-                          {profile.recentAnalytics.length === 0 && (
-                            <div className="text-center py-4 text-gray-400">
-                              No recent analytics
-                            </div>
-                          )}
+                          <div className="text-center py-4 text-gray-400">
+                            Security settings and information
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -640,4 +617,4 @@ export default function UserProfileModal({
       </motion.div>
     </AnimatePresence>
   );
-} 
+}

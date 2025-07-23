@@ -7,10 +7,6 @@ export interface DashboardStats {
   uploadsGrowth: string;
   storageUsed: number;
   storageGrowth: string;
-  totalViews: number;
-  viewsGrowth: string;
-  bandwidthUsed: number;
-  bandwidthGrowth: string;
   uploadsThisMonth: number;
   recentActivity: Activity[];
 }
@@ -25,7 +21,6 @@ export interface Upload {
   width?: number;
   height?: number;
   uploadedAt: string;
-  viewCount: number;
   thumbnails?: {
     small: string;
     medium: string;
@@ -40,20 +35,7 @@ export interface Activity {
   metadata?: Record<string, unknown>;
 }
 
-export interface Analytics {
-  viewsOverTime: Record<string, unknown>[];
-  topFiles: Array<{
-    fileName: string;
-    fileKey: string;
-    views: number;
-  }>;
-  eventDistribution: Record<string, unknown>[];
-  period: string;
-  totalEvents: number;
-  averageViewsPerFile: number;
-  mostPopularFormat: string | null;
-  peakTrafficHour: string;
-}
+
 
 export interface StorageInfo {
   totalFiles: number;
@@ -76,7 +58,7 @@ export const dashboardQueryKeys = {
   overview: (userEmail: string) => ['dashboard', 'overview', userEmail] as const,
   uploads: (userEmail: string, page?: number, limit?: number, filters?: Record<string, unknown>) => 
     ['dashboard', 'uploads', userEmail, page, limit, filters] as const,
-  analytics: (userEmail: string, period?: string) => ['dashboard', 'analytics', userEmail, period] as const,
+
   storage: (userEmail: string) => ['dashboard', 'storage', userEmail] as const,
   activities: (userEmail: string, page?: number, limit?: number) => 
     ['dashboard', 'activities', userEmail, page, limit] as const,
@@ -175,23 +157,7 @@ export function useDashboard() {
     });
   };
 
-  // Analytics query
-  const useAnalytics = (period = '7d') => {
-    return useQuery({
-      queryKey: dashboardQueryKeys.analytics(user?.email || '', period),
-      queryFn: async () => {
-        const response = await callDashboardAPI('analytics', 'GET', undefined, { period });
-        if (response.success) {
-          return response.data;
-        }
-        throw new Error(response.message || 'Failed to fetch analytics');
-      },
-      enabled: !!user?.email,
-      staleTime: 10 * 60 * 1000, // 10 minutes
-      gcTime: 15 * 60 * 1000, // 15 minutes
-      refetchOnWindowFocus: false,
-    });
-  };
+
 
   // Storage info query
   const storageQuery = useQuery({
@@ -383,21 +349,7 @@ export function useDashboard() {
     gcTime: 10 * 60 * 1000, // 10 minutes
   });
 
-  // Track analytics event
-  const trackEvent = useCallback(async (imageId: string, event: string, metadata?: Record<string, unknown>) => {
-    try {
-      await callDashboardAPI('track', 'POST', {
-        imageId,
-        event,
-        ipAddress: '', // Will be filled by backend
-        userAgent: navigator.userAgent,
-        referer: window.location.href,
-        ...metadata
-      });
-    } catch {
-      // Silently handle event tracking errors
-    }
-  }, [callDashboardAPI]);
+
 
   // Utility functions
   const formatFileSize = (bytes: number): string => {
@@ -430,7 +382,6 @@ export function useDashboard() {
     // Queries
     overviewQuery,
     useUploads,
-    useAnalytics,
     storageQuery,
     useActivities,
     duplicatesQuery,
@@ -447,7 +398,6 @@ export function useDashboard() {
     error: overviewQuery.error?.message || storageQuery.error?.message || null,
     
     // Utilities
-    trackEvent,
     logActivity,
     formatFileSize,
     formatTimeAgo,

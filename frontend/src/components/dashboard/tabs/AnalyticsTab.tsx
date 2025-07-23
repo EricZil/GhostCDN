@@ -2,7 +2,6 @@ import React from 'react';
 import ApiKeyAnalytics from '../ApiKeyAnalytics';
 
 interface AnalyticsData {
-  averageViewsPerFile?: number;
   peakTrafficHour?: string | null;
   mostPopularFormat?: string | null;
   totalEvents?: number;

@@ -373,10 +373,7 @@ If you didn't request this password reset, please ignore this email or contact s
                 <p>Upload your images and get instant CDN links that work globally.</p>
             </div>
             
-            <div class="feature">
-                <h4>📊 Track Analytics</h4>
-                <p>Monitor your image views, bandwidth usage, and performance metrics.</p>
-            </div>
+
             
             <div class="feature">
                 <h4>🎨 Image Optimization</h4>
@@ -416,7 +413,7 @@ Visit your dashboard: ${dashboardUrl}
 
 What you can do now:
 • Upload Images - Upload your images and get instant CDN links
-• Track Analytics - Monitor views, bandwidth usage, and performance
+
 • Image Optimization - Automatically optimize images for better performance
 • Generate Thumbnails - Create multiple thumbnail sizes
 

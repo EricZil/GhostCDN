@@ -91,31 +91,8 @@ export default function UploadModal({ isOpen, onClose, initialFile = null, onOpe
       return;
     }
     
-    // Supported file types
-    const supportedTypes: Record<string, string[]> = {
-      'image': ['jpeg', 'png', 'gif', 'webp', 'svg+xml'],
-      'video': ['mp4', 'webm', 'ogg', 'quicktime', 'x-matroska', 'x-msvideo', 'x-ms-wmv'],
-      'audio': ['mpeg', 'mp3', 'ogg', 'wav', 'x-wav', 'webm'],
-      'application': ['pdf', 'msword', 'vnd.openxmlformats-officedocument.wordprocessingml.document', 
-                      'vnd.ms-excel', 'vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                      'vnd.ms-powerpoint', 'vnd.openxmlformats-officedocument.presentationml.presentation']
-    };
-    
-    // Check if file type is supported
-    const [mainType, subType] = newFile.type.split('/');
-    const isSupported = mainType && 
-                        (mainType in supportedTypes) && 
-                        (supportedTypes[mainType].includes(subType) || mainType === 'image' || mainType === 'video');
-    
-    if (!isSupported && newFile.type !== '') {
-      setNotification({
-        isVisible: true,
-        type: 'error',
-        title: 'Unsupported File Type',
-        message: 'Please upload a supported file type (images, videos, documents, audio)'
-      });
-      return;
-    }
+    // Accept all file types - no restrictions
+    // File type validation removed to allow any file type
     
     const guestLimit = (settings?.guestUploadLimit || 10) * 1024 * 1024;
     const userLimit = (settings?.maxFileSize || 100) * 1024 * 1024;
@@ -402,4 +379,4 @@ export default function UploadModal({ isOpen, onClose, initialFile = null, onOpe
       )}
     </AnimatePresence>
   );
-} 
+}

@@ -1,4 +1,5 @@
 const storageService = require('../services/storage.service');
+const prisma = require('../lib/prisma');
 
 class UploadController {
   /**
@@ -52,6 +53,49 @@ class UploadController {
   }
   
   /**
+   * Calculate user's current storage usage
+   * @param {string} userId - User ID
+   * @returns {Promise<number>} - Total storage used in bytes
+   */
+  async calculateUserStorageUsage(userId) {
+    const storageUsed = await prisma.image.aggregate({
+      where: { userId },
+      _sum: { fileSize: true }
+    });
+    return storageUsed._sum.fileSize || 0;
+  }
+
+  /**
+   * Check if user has enough storage quota for upload
+   * @param {string} userId - User ID
+   * @param {number} fileSize - Size of file to upload
+   * @param {number} storageLimit - User's storage limit in bytes
+   * @returns {Promise<Object>} - Validation result
+   */
+  async validateUserStorageQuota(userId, fileSize, storageLimit) {
+    const currentUsage = await this.calculateUserStorageUsage(userId);
+    const newTotal = currentUsage + fileSize;
+    
+    if (newTotal > storageLimit) {
+      const availableSpace = storageLimit - currentUsage;
+      return {
+        valid: false,
+        currentUsage,
+        storageLimit,
+        availableSpace,
+        message: `Upload would exceed storage limit. Available: ${(availableSpace / (1024 * 1024)).toFixed(2)}MB, Required: ${(fileSize / (1024 * 1024)).toFixed(2)}MB`
+      };
+    }
+    
+    return {
+      valid: true,
+      currentUsage,
+      storageLimit,
+      availableSpace: storageLimit - newTotal
+    };
+  }
+
+  /**
    * Generate a presigned URL for registered user uploads
    * @param {Object} req - Express request object
    * @param {Object} res - Express response object
@@ -89,6 +133,22 @@ class UploadController {
         return res.status(400).json({
           success: false,
           message: `File size exceeds the limit of ${sizeLimit}${sizeUnit} for ${isCliRequest ? 'CLI' : 'web'} uploads`
+        });
+      }
+      
+      // Check user storage quota (10GB limit)
+      const storageLimit = 10 * 1024 * 1024 * 1024; // 10GB in bytes
+      const quotaValidation = await this.validateUserStorageQuota(req.user.id, fileSize, storageLimit);
+      
+      if (!quotaValidation.valid) {
+        return res.status(400).json({
+          success: false,
+          message: quotaValidation.message,
+          quota: {
+            currentUsage: quotaValidation.currentUsage,
+            storageLimit: quotaValidation.storageLimit,
+            availableSpace: quotaValidation.availableSpace
+          }
         });
       }
       

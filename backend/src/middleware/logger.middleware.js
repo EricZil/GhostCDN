@@ -1,6 +1,6 @@
 /**
  * Database-backed logging middleware
- * Stores logs in database for admin interface viewing
+ * Stores logs in database for admin interface access
  */
 
 const winston = require('winston');

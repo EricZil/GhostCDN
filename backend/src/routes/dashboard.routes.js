@@ -37,22 +37,7 @@ router.get('/overview/:userEmail', async (req, res) => {
       _sum: { fileSize: true }
     });
     
-    // Get total views
-    const totalViews = await prisma.analytics.count({
-      where: { 
-        userId,
-        event: 'VIEW'
-      }
-    });
-    
-    // Get bandwidth used (sum of file sizes for downloads)
-    const bandwidthUsed = await prisma.analytics.aggregate({
-      where: { 
-        userId,
-        event: 'DOWNLOAD'
-      },
-      _count: true
-    });
+
     
     // Get uploads this month
     const thisMonth = new Date();
@@ -88,10 +73,6 @@ router.get('/overview/:userEmail', async (req, res) => {
       uploadsGrowth: totalUploads > 0 ? 'New!' : '—',
       storageUsed: storageUsed._sum.fileSize || 0,
       storageGrowth: storageUsed._sum.fileSize > 0 ? 'Active' : '—',
-      totalViews,
-      viewsGrowth: totalViews > 0 ? 'Growing' : '—',
-      bandwidthUsed: bandwidthUsed._count * 1024 * 1024, // Approximate
-      bandwidthGrowth: bandwidthUsed._count > 0 ? 'Used' : '—',
       uploadsThisMonth,
       recentActivity
     };
@@ -208,20 +189,11 @@ router.get('/uploads/:userEmail', async (req, res) => {
       where,
       orderBy: { [sortBy]: order },
       skip,
-      take: parseInt(limit),
-      include: {
-        _count: {
-          select: {
-            analytics: {
-              where: { event: 'VIEW' }
-            }
-          }
-        }
-      }
+      take: parseInt(limit)
     });
     
-    // Transform uploads to include view count and thumbnail URLs
-    const uploadsWithViews = uploads.map(upload => {
+    // Transform uploads to include thumbnail URLs
+    const uploadsWithThumbnails = uploads.map(upload => {
       // Generate thumbnail URLs based on file structure, but only if hasThumbnails is true
       let thumbnails = null;
       const baseUrl = process.env.DO_SPACES_PUBLIC_URL || 'https://cdn.gcdn.space';
@@ -252,17 +224,11 @@ router.get('/uploads/:userEmail', async (req, res) => {
       
       return {
         ...upload,
-        viewCount: upload._count.analytics,
         thumbnails
       };
     });
     
-    // Sort by views if requested (post-query sorting)
-    if (sortBy === 'views') {
-      uploadsWithViews.sort((a, b) => {
-        return order === 'desc' ? b.viewCount - a.viewCount : a.viewCount - b.viewCount;
-      });
-    }
+
     
     const totalCount = await prisma.image.count({
       where
@@ -271,7 +237,7 @@ router.get('/uploads/:userEmail', async (req, res) => {
     res.json({
       success: true,
       data: {
-        uploads: uploadsWithViews,
+        uploads: uploadsWithThumbnails,
         pagination: {
           page: parseInt(page),
           limit: parseInt(limit),
@@ -290,164 +256,7 @@ router.get('/uploads/:userEmail', async (req, res) => {
   }
 });
 
-// Get analytics data
-router.get('/analytics/:userEmail', async (req, res) => {
-  try {
-    const { userEmail } = req.params;
-    
-    // Find user by email first
-    const user = await prisma.user.findUnique({
-      where: { email: userEmail }
-    });
-    
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'User not found'
-      });
-    }
-    
-    const userId = user.id;
-    const { period = '7d' } = req.query;
-    
-    // Calculate date range
-    const now = new Date();
-    const startDate = new Date();
-    
-    switch (period) {
-      case '24h':
-        startDate.setHours(now.getHours() - 24);
-        break;
-      case '7d':
-        startDate.setDate(now.getDate() - 7);
-        break;
-      case '30d':
-        startDate.setDate(now.getDate() - 30);
-        break;
-      case '90d':
-        startDate.setDate(now.getDate() - 90);
-        break;
-      default:
-        startDate.setDate(now.getDate() - 7);
-    }
-    
-    // Get views over time
-    const viewsOverTime = await prisma.analytics.groupBy({
-      by: ['createdAt'],
-      where: {
-        userId,
-        event: 'VIEW',
-        createdAt: {
-          gte: startDate
-        }
-      },
-      _count: {
-        id: true
-      },
-      orderBy: { createdAt: 'asc' }
-    });
-    
-    // Get top performing files
-    const topFiles = await prisma.analytics.groupBy({
-      by: ['imageId'],
-      where: {
-        userId,
-        event: 'VIEW',
-        createdAt: {
-          gte: startDate
-        }
-      },
-      _count: {
-        imageId: true
-      },
-      orderBy: {
-        _count: {
-          imageId: 'desc'
-        }
-      },
-      take: 10
-    });
-    
-    // Get file details for top files
-    const topFilesWithDetails = await Promise.all(
-      topFiles.map(async (file) => {
-        const imageDetails = await prisma.image.findUnique({
-          where: { id: file.imageId },
-          select: { fileName: true, fileKey: true }
-        });
-        return {
-          ...imageDetails,
-          views: file._count.imageId
-        };
-      })
-    );
-    
-    // Get event distribution
-    const eventDistribution = await prisma.analytics.groupBy({
-      by: ['event'],
-      where: {
-        userId,
-        createdAt: {
-          gte: startDate
-        }
-      },
-      _count: {
-        id: true
-      }
-    });
 
-    // Calculate additional analytics
-    const totalEvents = eventDistribution.reduce((sum, event) => sum + event._count.id, 0);
-    
-    // Get total files for average calculation
-    const totalFiles = await prisma.image.count({
-      where: { userId }
-    });
-    
-    // Calculate average views per file
-    const totalViews = eventDistribution.find(e => e.event === 'VIEW')?._count.id || 0;
-    const averageViewsPerFile = totalFiles > 0 ? totalViews / totalFiles : 0;
-    
-    // Get most popular file format
-    const fileTypeStats = await prisma.image.groupBy({
-      by: ['fileType'],
-      where: { userId },
-      _count: true,
-      orderBy: {
-        _count: {
-          fileType: 'desc'
-        }
-      },
-      take: 1
-    });
-    
-    const mostPopularFormat = fileTypeStats.length > 0 ? fileTypeStats[0].fileType : null;
-    
-    // Calculate peak traffic hour based on analytics data
-    const peakTrafficHour = totalViews > 0 ? '2-3 PM' : 'N/A';
-    
-    res.json({
-      success: true,
-      data: {
-        viewsOverTime,
-        topFiles: topFilesWithDetails,
-        eventDistribution,
-        period,
-        totalEvents,
-        averageViewsPerFile,
-        mostPopularFormat,
-        peakTrafficHour
-      }
-    });
-  } catch (error) {
-    console.error('Error fetching analytics:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to fetch analytics',
-      error: error.message
-    });
-  }
-});
 
 // Get storage information
 router.get('/storage/:userEmail', async (req, res) => {
@@ -490,27 +299,67 @@ router.get('/storage/:userEmail', async (req, res) => {
     
     // Function to map MIME types to user-friendly categories
     const getCategoryFromMimeType = (mimeType) => {
-      if (!mimeType) return 'Other';
-      
-      const type = mimeType.toLowerCase();
-      
-      if (type.startsWith('image/')) {
-        return 'Photos';
-      } else if (type.startsWith('video/')) {
-        return 'Videos';
-      } else if (type.startsWith('audio/')) {
-        return 'Audio';
-      } else if (type.includes('pdf') || type.includes('document') || type.includes('text') || 
-                 type.includes('word') || type.includes('excel') || type.includes('powerpoint') ||
-                 type.includes('spreadsheet') || type.includes('presentation')) {
-        return 'Documents';
-      } else if (type.includes('zip') || type.includes('rar') || type.includes('tar') || 
-                 type.includes('gzip') || type.includes('7z')) {
-        return 'Archives';
-      } else {
-        return 'Other';
-      }
-    };
+  if (!mimeType) return 'Other';
+  
+  const type = mimeType.toLowerCase();
+  
+  // Images
+  if (type.startsWith('image/')) {
+    return 'Photos';
+  }
+  // Videos
+  else if (type.startsWith('video/')) {
+    return 'Videos';
+  }
+  // Audio
+  else if (type.startsWith('audio/')) {
+    return 'Audio';
+  }
+  // Documents - Enhanced categorization
+  else if (type.includes('pdf') || type.includes('document') || type.includes('text') || 
+           type.includes('word') || type.includes('excel') || type.includes('powerpoint') ||
+           type.includes('spreadsheet') || type.includes('presentation') ||
+           type.includes('msword') || type.includes('officedocument') ||
+           type === 'text/plain' || type === 'text/csv' || type === 'text/html' ||
+           type === 'text/css' || type === 'text/markdown') {
+    return 'Documents';
+  }
+  // Archives - Enhanced categorization
+  else if (type.includes('zip') || type.includes('rar') || type.includes('tar') || 
+           type.includes('gzip') || type.includes('7z') || type.includes('compressed') ||
+           type === 'application/x-zip-compressed' || type === 'application/x-rar-compressed') {
+    return 'Archives';
+  }
+  // Code files
+  else if (type === 'application/javascript' || type === 'application/json' ||
+           type === 'application/xml' || type.includes('script')) {
+    return 'Code';
+  }
+  // Fonts
+  else if (type.startsWith('font/') || type.includes('font') ||
+           type === 'application/font-woff' || type === 'application/font-woff2') {
+    return 'Fonts';
+  }
+  // 3D Models
+  else if (type.includes('model/') || type.includes('3d') ||
+           type === 'application/octet-stream' && mimeType.includes('obj')) {
+    return '3D Models';
+  }
+  // Executables
+  else if (type === 'application/x-msdownload' || type === 'application/x-executable' ||
+           type.includes('executable')) {
+    return 'Executables';
+  }
+  // Data files
+  else if (type === 'application/octet-stream' || type.includes('binary') ||
+           type.includes('data')) {
+    return 'Data';
+  }
+  // Default category
+  else {
+    return 'Other';
+  }
+};
     
     // Group by category instead of MIME type
     const categoryMap = new Map();
@@ -842,49 +691,7 @@ router.delete('/files/bulk', async (req, res) => {
   }
 });
 
-// Track analytics event
-router.post('/track', async (req, res) => {
-  try {
-    const { imageId, userId: userEmail, event, ipAddress, userAgent, referer } = req.body;
-    
-    // Find user by email first
-    const user = await prisma.user.findUnique({
-      where: { email: userEmail }
-    });
-    
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'User not found'
-      });
-    }
-    
-    const userId = user.id;
-    
-    await prisma.analytics.create({
-      data: {
-        imageId,
-        userId,
-        event,
-        ipAddress,
-        userAgent,
-        referer
-      }
-    });
-    
-    res.json({
-      success: true,
-      message: 'Event tracked successfully'
-    });
-  } catch (error) {
-    console.error('Error tracking event:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to track event',
-      error: error.message
-    });
-  }
-});
+
 
 // Log activity
 router.post('/activity', async (req, res) => {
@@ -1124,18 +931,10 @@ router.get('/duplicates/:userEmail', async (req, res) => {
             fileName: group.fileName
           },
           orderBy: { uploadedAt: 'asc' },
-          include: {
-            _count: {
-              select: {
-                analytics: {
-                  where: { event: 'VIEW' }
-                }
-              }
-            }
-          }
+
         });
         
-        // Add thumbnail URLs and view counts
+        // Add thumbnail URLs
         const filesWithDetails = files.map(file => {
           const baseUrl = process.env.DO_SPACES_PUBLIC_URL || 'https://cdn.gcdn.space';
           let thumbnails = null;
@@ -1166,7 +965,6 @@ router.get('/duplicates/:userEmail', async (req, res) => {
 
           return {
             ...file,
-            viewCount: file._count.analytics,
             thumbnails
           };
         });

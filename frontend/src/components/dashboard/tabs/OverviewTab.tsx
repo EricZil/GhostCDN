@@ -61,25 +61,9 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
             icon: '💾', 
             color: 'from-blue-500 to-cyan-500' 
           },
-          { 
-            label: 'Total Views', 
-            value: dashboardStats.totalViews.toLocaleString(), 
-            change: dashboardStats.viewsGrowth, 
-            icon: '👁️', 
-            color: 'from-purple-500 to-pink-500' 
-          },
-          { 
-            label: 'Bandwidth', 
-            value: formatFileSize(dashboardStats.bandwidthUsed), 
-            change: dashboardStats.bandwidthGrowth, 
-            icon: '🌐', 
-            color: 'from-orange-500 to-red-500' 
-          },
         ] : [
           { label: 'Total Uploads', value: '...', change: '...', icon: '📤', color: 'from-green-500 to-emerald-500' },
           { label: 'Storage Used', value: '...', change: '...', icon: '💾', color: 'from-blue-500 to-cyan-500' },
-          { label: 'Total Views', value: '...', change: '...', icon: '👁️', color: 'from-purple-500 to-pink-500' },
-          { label: 'Bandwidth', value: '...', change: '...', icon: '🌐', color: 'from-orange-500 to-red-500' },
         ]).map((stat, index) => (
           <div key={index} className="bg-[rgba(20,20,35,0.8)] rounded-2xl p-6 border border-gray-700/50 shadow-xl backdrop-blur-sm hover:scale-105 transition-all duration-300">
             <div className="flex items-center justify-between mb-4">

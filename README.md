@@ -22,7 +22,7 @@
 - 🖼️ **Smart image processing** with automatic optimization & WebP thumbnails  
 - 👥 **Guest friendly** - 10MB uploads, no signup required (14-day retention)
 - 🔐 **Power user ready** - Unlimited storage for registered users
-- 📊 **Analytics built-in** - Track views and monitor your content
+- 📊 **API Analytics** - Monitor API usage and performance
 - ⚡ **Developer focused** - Clean APIs, proper auth, admin controls
 
 **Also!** DataShadow's bff - Claude AI ❤️
@@ -159,12 +159,12 @@ The haunt just started.
 - **EXIF Control**: Choose to preserve or strip metadata for privacy
 - **Sharp Processing**: High-quality image manipulation with Sharp.js
 
-### 📊 **Analytics & Insights**
-- **View Tracking**: Monitor file views and user activity in real-time
-- **Visual Dashboard**: Interactive charts showing view patterns over time
+### 📊 **API Analytics & Insights**
+- **API Usage Tracking**: Monitor API requests and performance metrics
+- **Visual Dashboard**: Interactive charts showing API usage patterns over time
 - **Storage Insights**: Monitor storage usage with detailed breakdowns
-- **Top Files**: Identify your most viewed content
-- **Coming Soon**: Download tracking and advanced analytics
+- **Request Analytics**: Track response times, status codes, and endpoints
+- **Coming Soon**: Advanced API metrics and reporting
 
 ### 🔐 **Enterprise Security**
 - **Rate Limiting**: Smart rate limits with higher allowances for authenticated users

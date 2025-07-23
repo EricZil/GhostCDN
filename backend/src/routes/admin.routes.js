@@ -115,7 +115,6 @@ router.get('/overview', async (req, res) => {
       totalUsers,
       totalFiles,
       totalStorage,
-      totalBandwidth,
       usersToday,
       filesThisWeek,
       systemHealth
@@ -131,10 +130,7 @@ router.get('/overview', async (req, res) => {
         _sum: { fileSize: true }
       }),
       
-      // Total bandwidth (from analytics views)
-      prisma.analytics.count({
-        where: { event: 'VIEW' }
-      }),
+
       
       // New users today
       prisma.user.count({
@@ -218,7 +214,7 @@ router.get('/overview', async (req, res) => {
       totalUsers,
       totalFiles,
       totalStorage: totalStorage._sum.fileSize || 0,
-      totalBandwidth: totalBandwidth * 1024 * 1024, // Estimate bandwidth
+
       usersToday,
       filesThisWeek,
       systemHealth: transformedSystemHealth,
@@ -409,14 +405,7 @@ router.get('/users/:userId/profile', async (req, res) => {
             fileKey: true,
             fileSize: true,
             fileType: true,
-            uploadedAt: true,
-            _count: {
-              select: {
-                analytics: {
-                  where: { event: 'VIEW' }
-                }
-              }
-            }
+            uploadedAt: true
           },
           orderBy: { uploadedAt: 'desc' },
           take: 20
@@ -452,24 +441,12 @@ router.get('/users/:userId/profile', async (req, res) => {
     }
 
     // Get storage usage and ban status
-    const [storageUsed, recentAnalytics, activeBans] = await Promise.all([
+    const [storageUsed, activeBans] = await Promise.all([
       prisma.image.aggregate({
         where: { userId },
         _sum: { fileSize: true }
       }),
-      prisma.analytics.findMany({
-        where: { userId },
-        include: {
-          image: {
-            select: {
-              fileName: true,
-              fileKey: true
-            }
-          }
-        },
-        orderBy: { createdAt: 'desc' },
-        take: 20
-      }),
+
       prisma.userBan.findMany({
         where: {
           AND: [
@@ -497,10 +474,7 @@ router.get('/users/:userId/profile', async (req, res) => {
     ]);
 
     // Transform uploads data
-    const uploads = user.images.map(image => ({
-      ...image,
-      viewCount: image._count.analytics
-    }));
+    const uploads = user.images;
 
     // Determine user status based on bans and activity
     let status = 'active';
@@ -516,7 +490,7 @@ router.get('/users/:userId/profile', async (req, res) => {
       totalUploads: user._count.images,
       totalActivities: user._count.activities,
       storageUsed: storageUsed._sum.fileSize || 0,
-      recentAnalytics,
+
       status,
       banInfo: activeBans.length > 0 ? {
         banType: activeBans[0].banType,
@@ -784,9 +758,6 @@ router.delete('/users/:userId', async (req, res) => {
     });
 
     // Delete related records
-    await prisma.analytics.deleteMany({
-      where: { userId }
-    });
 
     await prisma.activity.deleteMany({
       where: { userId }
@@ -849,13 +820,7 @@ router.get('/files', async (req, res) => {
           user: {
             select: { name: true, email: true }
           },
-          _count: {
-            select: {
-              analytics: {
-                where: { event: 'VIEW' }
-              }
-            }
-          }
+
         },
         orderBy: { uploadedAt: 'desc' },
         skip: Number(skip),
@@ -869,7 +834,7 @@ router.get('/files', async (req, res) => {
         prisma.image.count({
           where: { fileSize: { gt: 100 * 1024 * 1024 } } // >100MB
         }),
-        // Flagged content: files with suspicious names or excessive views
+        // Flagged content: files with suspicious names
         prisma.image.count({
           where: {
             OR: [
@@ -879,15 +844,11 @@ router.get('/files', async (req, res) => {
             ]
           }
         }),
-        // Orphaned files: files with no recent analytics (not viewed in 90 days)
+        // Old files: files uploaded more than 90 days ago
         prisma.image.count({
           where: {
-            analytics: {
-              none: {
-                createdAt: {
-                  gte: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000)
-                }
-              }
+            uploadedAt: {
+              lt: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000)
             }
           }
         })
@@ -899,7 +860,6 @@ router.get('/files', async (req, res) => {
     res.json({
       files: files.map(file => ({
         ...file,
-        viewCount: file._count.analytics,
         owner: file.user
       })),
       totalFiles,
@@ -918,105 +878,7 @@ router.get('/files', async (req, res) => {
   }
 });
 
-// Global Analytics
-router.get('/analytics', async (req, res) => {
-  try {
-    const { period = '7d' } = req.query;
-    
-    let startDate;
-    switch (period) {
-      case '24h':
-        startDate = new Date(Date.now() - 24 * 60 * 60 * 1000);
-        break;
-      case '30d':
-        startDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-        break;
-      case '90d':
-        startDate = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
-        break;
-      default: // 7d
-        startDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-    }
 
-    const [
-      totalViews,
-      totalUploads,
-      topFiles,
-      userGrowth,
-      storageGrowth
-    ] = await Promise.all([
-      // Total views in period
-      prisma.analytics.count({
-        where: {
-          event: 'VIEW',
-          createdAt: { gte: startDate }
-        }
-      }),
-      
-      // Total uploads in period
-      prisma.image.count({
-        where: {
-          uploadedAt: { gte: startDate }
-        }
-      }),
-      
-      // Top performing files
-      prisma.image.findMany({
-        include: {
-          _count: {
-            select: {
-              analytics: {
-                where: { 
-                  event: 'VIEW',
-                  createdAt: { gte: startDate }
-                }
-              }
-            }
-          }
-        },
-        orderBy: {
-          analytics: {
-            _count: 'desc'
-          }
-        },
-        take: 10
-      }),
-      
-      // User growth over time
-      prisma.user.groupBy({
-        by: ['createdAt'],
-        where: {
-          createdAt: { gte: startDate }
-        },
-        _count: true
-      }),
-      
-      // Storage growth
-      prisma.image.aggregate({
-        where: {
-          uploadedAt: { gte: startDate }
-        },
-        _sum: { fileSize: true }
-      })
-    ]);
-
-    res.json({
-      totalViews,
-      totalUploads,
-      topFiles: topFiles.map(file => ({
-        fileName: file.fileName,
-        views: file._count.analytics,
-        fileSize: file.fileSize
-      })),
-      userGrowth: userGrowth.length,
-      storageGrowth: storageGrowth._sum.fileSize || 0,
-      period
-    });
-  } catch (error) {
-    console.error('Admin analytics error:', error);
-    res.status(500).json({ error: 'Failed to fetch analytics' });
-  }
-});
 
 // System Settings
 router.get('/settings', async (req, res) => {
@@ -1041,7 +903,7 @@ router.get('/settings', async (req, res) => {
       userRegistration: true,
       maintenanceMode: false,
       guestUploadLimit: 10, // MB
-      userStorageLimit: 10, // GB
+      userStorageLimit: 10, // GB - 10GB storage limit for users
       maxFileSize: 100 // MB
     };
 
@@ -1621,7 +1483,7 @@ router.get('/guest-uploads', async (req, res) => {
   }
 });
 
-module.exports = router; 
+module.exports = router;
 
 
 

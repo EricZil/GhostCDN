@@ -12,7 +12,6 @@ interface Upload {
   fileType: string;
   fileKey: string;
   uploadedAt: string;
-  viewCount: number;
   uploadSource?: 'web' | 'cli';
   hasThumbnails?: boolean;
   thumbnails?: {
@@ -25,7 +24,6 @@ interface Upload {
 interface DashboardStats {
   uploadsThisMonth: number;
   totalUploads: number;
-  totalViews: number;
   storageUsed: number;
 }
 
@@ -138,7 +136,6 @@ export const UploadsTab: React.FC<UploadsTabProps> = ({
           {dashboardStats ? [
             { label: 'This Month', value: dashboardStats.uploadsThisMonth.toString(), icon: '📅', color: 'from-green-500 to-emerald-500' },
             { label: 'Total Files', value: dashboardStats.totalUploads.toString(), icon: '📁', color: 'from-blue-500 to-cyan-500' },
-            { label: 'Total Views', value: dashboardStats.totalViews.toLocaleString(), icon: '👁️', color: 'from-purple-500 to-pink-500' },
             { label: 'Storage Used', value: formatFileSize(dashboardStats.storageUsed), icon: '💾', color: 'from-orange-500 to-red-500' },
           ].map((stat, index) => (
             <div key={index} className="bg-black/20 rounded-xl p-4 border border-gray-700/50 backdrop-blur-sm">
@@ -155,7 +152,6 @@ export const UploadsTab: React.FC<UploadsTabProps> = ({
           )) : [
             { label: 'This Month', value: '...', icon: '📅', color: 'from-green-500 to-emerald-500' },
             { label: 'Total Files', value: '...', icon: '📁', color: 'from-blue-500 to-cyan-500' },
-            { label: 'Total Views', value: '...', icon: '👁️', color: 'from-purple-500 to-pink-500' },
             { label: 'Storage Used', value: '...', icon: '💾', color: 'from-orange-500 to-red-500' },
           ].map((stat, index) => (
             <div key={index} className="bg-black/20 rounded-xl p-4 border border-gray-700/50 backdrop-blur-sm">
@@ -313,12 +309,7 @@ export const UploadsTab: React.FC<UploadsTabProps> = ({
                             </svg>
                             {formatTimeAgo(file.uploadedAt)}
                           </span>
-                          <span className="flex items-center gap-1">
-                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                            </svg>
-                            {file.viewCount} views
-                          </span>
+
                         </div>
                       </div>
                     </div>

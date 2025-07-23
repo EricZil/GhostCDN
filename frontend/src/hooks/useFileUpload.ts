@@ -146,6 +146,15 @@ export function useFileUpload() {
         : await getGuestPresignedUrl(fileInfo, options);
       
       if (!presignedResponse.success || !presignedResponse.data) {
+        // Check if this is a storage quota error
+        if (presignedResponse.quota) {
+          const { currentUsage, storageLimit, availableSpace } = presignedResponse.quota;
+          const currentUsageGB = (currentUsage / (1024 * 1024 * 1024)).toFixed(2);
+          const storageLimitGB = (storageLimit / (1024 * 1024 * 1024)).toFixed(0);
+          const availableSpaceMB = (availableSpace / (1024 * 1024)).toFixed(2);
+          
+          throw new Error(`Storage quota exceeded! You're using ${currentUsageGB}GB of your ${storageLimitGB}GB limit. Available space: ${availableSpaceMB}MB. Please delete some files to free up space.`);
+        }
         throw new Error(presignedResponse.message || 'Failed to get presigned URL');
       }
       
@@ -237,4 +246,4 @@ export function useFileUpload() {
     isAuthenticated,
     estimateOptimization
   };
-} 
+}

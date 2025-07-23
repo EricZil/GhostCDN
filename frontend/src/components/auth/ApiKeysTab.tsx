@@ -26,14 +26,14 @@ export default function ApiKeysTab() {
     name: string;
     permissions: {
       files: { read: boolean; write: boolean; delete: boolean };
-      analytics: { read: boolean };
+    
     };
     expiresIn: number | null;
   }>({
     name: '',
     permissions: {
       files: { read: true, write: true, delete: false },
-      analytics: { read: true }
+  
     },
     expiresIn: 365
   });
@@ -109,7 +109,7 @@ export default function ApiKeysTab() {
         name: '',
         permissions: {
           files: { read: true, write: true, delete: false },
-          analytics: { read: true }
+    
         },
         expiresIn: 365
       });
@@ -345,9 +345,7 @@ export default function ApiKeysTab() {
                       {key.permissions.files.delete && (
                         <span className="px-2 py-1 bg-red-500/20 text-red-400 rounded text-xs">Files: Delete</span>
                       )}
-                      {key.permissions.analytics.read && (
-                        <span className="px-2 py-1 bg-purple-500/20 text-purple-400 rounded text-xs">Analytics: Read</span>
-                      )}
+
                     </div>
                   </div>
                 </div>
@@ -472,22 +470,7 @@ export default function ApiKeysTab() {
                           />
                           <span className="text-sm text-gray-300">Delete Files</span>
                         </label>
-                        <label className="flex items-center">
-                          <input
-                            type="checkbox"
-                            checked={newKeyData.permissions.analytics.read}
-                            onChange={(e) => setNewKeyData(prev => ({
-                              ...prev,
-                              permissions: {
-                                ...prev.permissions,
-                                analytics: { ...prev.permissions.analytics, read: e.target.checked }
-                              }
-                            }))}
-                            className="mr-2"
-                            disabled={creating}
-                          />
-                          <span className="text-sm text-gray-300">Read Analytics</span>
-                        </label>
+
                       </div>
                     </div>
 

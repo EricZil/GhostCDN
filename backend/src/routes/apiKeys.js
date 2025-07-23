@@ -116,8 +116,7 @@ router.post('/', validateNextAuthJWT, keyGenerationRateLimit, async (req, res) =
     const result = await apiKeyService.createApiKey(userId, {
       name: name.trim(),
       permissions: permissions || {
-        files: { read: true, write: true, delete: false },
-        analytics: { read: true }
+        files: { read: true, write: true, delete: false }
       },
       expiresAt: expiresIn ? new Date(Date.now() + expiresIn * 24 * 60 * 60 * 1000) : null
     });

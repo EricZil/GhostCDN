@@ -11,7 +11,7 @@ interface Upload {
   fileSize: number;
   fileType: string;
   uploadedAt: string;
-  viewCount: number;
+
   thumbnails?: {
     small: string;
     medium: string;

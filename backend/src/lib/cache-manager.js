@@ -17,7 +17,6 @@ class CacheManager {
       FILE: 'file',
       UPLOAD: 'upload',
       STORAGE: 'storage',
-      ANALYTICS: 'analytics',
       SYSTEM: 'system',
       SETTINGS: 'settings'
     };

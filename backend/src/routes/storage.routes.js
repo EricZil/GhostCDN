@@ -302,7 +302,7 @@ router.get('/optimization', async (req, res) => {
       LIMIT 20
     ` : [];
     
-    // Find old files (>6 months, no recent views)
+    // Find old files (>6 months)
     const sixMonthsAgo = new Date();
     sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
     
@@ -316,22 +316,13 @@ router.get('/optimization', async (req, res) => {
         fileName: true,
         fileSize: true,
         uploadedAt: true,
-        _count: {
-          select: {
-            analytics: {
-              where: {
-                event: 'VIEW',
-                createdAt: { gte: sixMonthsAgo }
-              }
-            }
-          }
-        }
+
       },
       take: 50
     }) : [];
     
-    // Filter old files with no recent views
-    const unusedOldFiles = oldFiles.filter(file => file._count.analytics === 0);
+    // Use all old files as unused (no analytics tracking)
+    const unusedOldFiles = oldFiles;
     
     // Calculate potential savings
     const largeSavings = largeFiles.reduce((sum, file) => sum + (file.fileSize * 0.3), 0); // Assume 30% compression
@@ -430,15 +421,7 @@ router.post('/report', async (req, res) => {
       })
     ]);
     
-    // Calculate analytics
-    const totalViews = await prisma.analytics.count({
-      where: userId ? {
-        userId,
-        event: 'VIEW'
-      } : {
-        event: 'VIEW'
-      }
-    });
+
     
     const report = {
       generatedAt: new Date().toISOString(),
@@ -446,7 +429,7 @@ router.post('/report', async (req, res) => {
         totalFiles: stats._count.id || 0,
         totalSize: stats._sum.fileSize || 0,
         averageFileSize: Math.round(stats._avg.fileSize || 0),
-        totalViews,
+
         storageLimit: 10 * 1024 * 1024 * 1024, // 10GB
         usagePercentage: ((stats._sum.fileSize || 0) / (10 * 1024 * 1024 * 1024)) * 100
       },
@@ -601,22 +584,10 @@ router.post('/optimize', async (req, res) => {
               userId,
               uploadedAt: { lt: sixMonthsAgo },
               ...(fileIds && fileIds.length > 0 ? { id: { in: fileIds } } : {})
-            },
-            include: {
-              _count: {
-                select: {
-                  analytics: {
-                    where: {
-                      event: 'VIEW',
-                      createdAt: { gte: sixMonthsAgo }
-                    }
-                  }
-                }
-              }
             }
           });
           
-          const unusedFiles = oldFiles.filter(file => file._count.analytics === 0);
+          const unusedFiles = oldFiles; // All old files are considered unused (no analytics tracking)
           
           for (const file of unusedFiles) {
             try {

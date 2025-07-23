@@ -8,7 +8,7 @@ import { PointerHighlight } from "@/components/PointerHighlight";
 import { useDashboard } from '@/hooks/useDashboard';
 import { useNotification } from '@/contexts/NotificationContext';
 import { useAdmin } from '@/hooks/useAdmin';
-import { useSettings } from '@/contexts/SettingsContext';
+
 import { SearchFilters } from '@/components/dashboard/FileSearch';
 import DuplicateDetection from '@/components/dashboard/DuplicateDetection';
 import AdminOverview from '@/components/dashboard/admin/AdminOverview';
@@ -21,7 +21,6 @@ import {
   ActivityTab,
   AdminUsersTab,
   AdminFilesTab,
-  AdminAnalyticsTab,
   AdminSystemTab,
   AdminLogsTab
 } from '@/components/dashboard/tabs';
@@ -46,7 +45,6 @@ interface AdminUser {
 interface AdminFile {
   fileName: string;
   fileSize: number;
-  viewCount: number;
   uploadedAt: string;
   owner?: { name: string };
 }
@@ -81,7 +79,6 @@ export default function DashboardModal({ isOpen, onClose }: DashboardModalProps)
   const { user } = useAuth();
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const { showNotification } = useNotification();
-  const { refreshSettings } = useSettings();
   
 
   
@@ -97,7 +94,7 @@ export default function DashboardModal({ isOpen, onClose }: DashboardModalProps)
     sortBy: 'uploadedAt',
     sortOrder: 'desc'
   });
-  const [analyticsPeriod, setAnalyticsPeriod] = useState('7d');
+
   const [deleteConfirmModal, setDeleteConfirmModal] = useState<{
     isOpen: boolean;
     fileId: string;
@@ -109,16 +106,12 @@ export default function DashboardModal({ isOpen, onClose }: DashboardModalProps)
   
   // Dashboard hook
   const {
-    overviewQuery,
     useUploads,
-    useAnalytics,
     storageQuery,
     useActivities,
-    duplicatesQuery,
     deleteFileMutation,
     bulkDeleteMutation,
     bulkDownloadMutation,
-    queryClient,
     // Legacy compatibility
     dashboardStats,
     storageInfo,
@@ -133,21 +126,12 @@ export default function DashboardModal({ isOpen, onClose }: DashboardModalProps)
     overviewQuery: adminOverviewQuery,
     useUsers: useAdminUsers,
     useFiles: useAdminFiles,
-    useAnalytics: useAdminAnalytics,
     settingsQuery: systemSettingsQuery,
     useLogs: useSystemLogs,
     messagesQuery: systemMessagesQuery,
     createMessageMutation,
     updateMessageMutation,
     deleteMessageMutation,
-    updateUserMutation,
-    deleteUserMutation,
-    createUserMutation,
-    updateSettingsMutation,
-    formatFileSize: adminFormatFileSize,
-    formatTimeAgo: adminFormatTimeAgo,
-    // Legacy compatibility
-    loading: adminLoading,
   } = useAdmin();
 
   // Local state for UI interactions
@@ -190,19 +174,14 @@ export default function DashboardModal({ isOpen, onClose }: DashboardModalProps)
 
   // Use React Query hooks for dashboard data
   const uploadsQuery = useUploads(currentPage, itemsPerPage, searchFilters as unknown as Record<string, unknown>);
-  const analyticsQuery = useAnalytics(analyticsPeriod);
   const activitiesQuery = useActivities(1, 20);
   
   // Extract data from queries
   const uploads = uploadsQuery.data?.uploads || [];
-  const analytics = analyticsQuery.data;
   const activities = activitiesQuery.data?.activities || [];
-  const duplicates = duplicatesQuery.data?.duplicates || [];
-
   // Admin queries (only enabled when needed)
   const adminUsersQuery = useAdminUsers('', '', 1, 20);
   const adminFilesQuery = useAdminFiles('', '', 1, 20);
-  const adminAnalyticsQuery = useAdminAnalytics(analyticsPeriod);
   const systemLogsQuery = useSystemLogs('', '', 1, 50);
   
   // Extract admin data from queries
@@ -319,7 +298,7 @@ export default function DashboardModal({ isOpen, onClose }: DashboardModalProps)
   };
 
   const handleSelectAll = () => {
-    setSelectedFiles(uploads.map((upload: any) => upload.id));
+    setSelectedFiles(uploads.map((upload: { id: string }) => upload.id));
   };
 
   const handleDeselectAll = () => {
@@ -333,25 +312,7 @@ export default function DashboardModal({ isOpen, onClose }: DashboardModalProps)
     // React Query will automatically refetch with new filters
   }, []);
 
-  // Handle duplicate finding
-  const handleFindDuplicates = async () => {
-    try {
-      await duplicatesQuery.refetch();
-      showNotification({
-        type: 'success',
-        title: 'Duplicates Found',
-        message: 'Duplicate files have been identified',
-        duration: 4000
-      });
-    } catch {
-      showNotification({
-        type: 'error',
-        title: 'Search Failed',
-        message: 'Failed to find duplicate files',
-        duration: 4000
-      });
-    }
-  };
+
 
   // Handle pagination
   const handlePageChange = useCallback((page: number) => {
@@ -365,11 +326,7 @@ export default function DashboardModal({ isOpen, onClose }: DashboardModalProps)
     // React Query will automatically refetch with new items per page
   }, []);
 
-  // Handle analytics period change
-  const handleAnalyticsPeriodChange = (period: string) => {
-    setAnalyticsPeriod(period);
-    // React Query will automatically refetch with new period
-  };
+
 
   // Message management functions
   const handleCreateMessage = async () => {
@@ -558,15 +515,16 @@ export default function DashboardModal({ isOpen, onClose }: DashboardModalProps)
       label: 'Duplicates', 
       icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V15a2 2 0 01-2 2v0a2 2 0 01-2-2v-2a2 2 0 00-2-2H8z" />
     },
-    { 
-      id: 'analytics', 
-      label: 'Analytics', 
-      icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-    },
+
     { 
       id: 'storage', 
       label: 'Storage', 
       icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
+    },
+    { 
+      id: 'analytics', 
+      label: 'Analytics', 
+      icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
     },
     { 
       id: 'activity', 
@@ -593,8 +551,8 @@ export default function DashboardModal({ isOpen, onClose }: DashboardModalProps)
     },
     { 
       id: 'admin-analytics', 
-      label: 'Global Analytics', 
-      icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 8v8m-4-5v5m-4-2v2m-2 4h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+      label: 'Analytics', 
+      icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
     },
     { 
       id: 'admin-system', 
@@ -630,7 +588,7 @@ export default function DashboardModal({ isOpen, onClose }: DashboardModalProps)
           <UploadsTab 
             dashboardStats={dashboardStats}
             formatFileSize={formatFileSize}
-            uploads={uploads.map((upload: any) => ({
+            uploads={uploads.map((upload: { thumbnails?: unknown; [key: string]: unknown }) => ({
               ...upload,
               thumbnails: upload.thumbnails || undefined
             }))}
@@ -664,14 +622,7 @@ export default function DashboardModal({ isOpen, onClose }: DashboardModalProps)
           />
         );
 
-      case 'analytics':
-        return (
-          <AnalyticsTab 
-            analyticsPeriod={analyticsPeriod}
-            handleAnalyticsPeriodChange={handleAnalyticsPeriodChange}
-            analytics={analytics}
-          />
-        );
+
 
       case 'storage':
         return (
@@ -689,6 +640,15 @@ export default function DashboardModal({ isOpen, onClose }: DashboardModalProps)
                 />
         );
 
+      case 'analytics':
+        return (
+          <AnalyticsTab 
+            analytics={null}
+            analyticsPeriod="7d"
+            handleAnalyticsPeriodChange={() => {}}
+          />
+        );
+
       case 'activity':
         return (
           <ActivityTab 
@@ -703,7 +663,7 @@ export default function DashboardModal({ isOpen, onClose }: DashboardModalProps)
       case 'admin-overview':
         return (
           <AdminOverview 
-            adminStats={adminStats as any || null}
+            adminStats={adminStats || null}
             adminLoading={adminOverviewQuery.isLoading}
             adminFormatFileSize={formatFileSize}
             adminFormatTimeAgo={formatTimeAgo}
@@ -734,7 +694,13 @@ export default function DashboardModal({ isOpen, onClose }: DashboardModalProps)
         );
 
       case 'admin-analytics':
-        return <AdminAnalyticsTab />;
+        return (
+          <AnalyticsTab 
+            analytics={null}
+            analyticsPeriod="7d"
+            handleAnalyticsPeriodChange={() => {}}
+          />
+        );
 
       case 'admin-system':
         return (
@@ -845,7 +811,7 @@ export default function DashboardModal({ isOpen, onClose }: DashboardModalProps)
                   </div>
                 </div>
                 <p className="text-gray-400 text-sm mt-1">
-                  {isAdminMode ? 'System Administration Panel' : 'Manage your uploads and view analytics'}
+                  {isAdminMode ? 'System Administration Panel' : 'Manage your uploads and storage'}
                 </p>
               </div>
             </div>

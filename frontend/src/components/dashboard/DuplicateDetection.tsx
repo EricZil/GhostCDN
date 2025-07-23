@@ -19,7 +19,6 @@ interface DuplicateGroup {
     fileSize: number;
     fileType: string;
     uploadedAt: string;
-    viewCount: number;
     thumbnails?: {
       small: string;
       medium: string;
@@ -303,7 +302,7 @@ export default function DuplicateDetection({ onClose }: DuplicateDetectionProps)
                               <div className="flex-1">
                                 <div className="font-medium text-white">{file.fileName}</div>
                                 <div className="text-sm text-gray-400">
-                                  Uploaded {formatTimeAgo(file.uploadedAt)} • {file.viewCount} views
+                                  Uploaded {formatTimeAgo(file.uploadedAt)}
                                 </div>
                               </div>
                               

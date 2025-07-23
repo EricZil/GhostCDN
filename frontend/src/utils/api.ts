@@ -32,7 +32,12 @@ export async function getGuestPresignedUrl(
     cdnUrl: string;
     provider: string;
     contentType: string;
-  }
+  };
+  quota?: {
+    currentUsage: number;
+    storageLimit: number;
+    availableSpace: number;
+  };
 }> {
   const requestData = {
     ...fileInfo,
@@ -82,7 +87,12 @@ export async function getUserPresignedUrl(
     cdnUrl: string;
     provider: string;
     contentType: string;
-  }
+  };
+  quota?: {
+    currentUsage: number;
+    storageLimit: number;
+    availableSpace: number;
+  };
 }> {
   const requestData = {
     ...fileInfo,
@@ -306,9 +316,6 @@ export interface ApiKey {
       write: boolean;
       delete: boolean;
     };
-    analytics: {
-      read: boolean;
-    };
   };
   lastUsed: string | null;
   usageCount: number;
@@ -383,7 +390,6 @@ export async function createApiKey(
     name: string;
     permissions: {
       files: { read: boolean; write: boolean; delete: boolean };
-      analytics: { read: boolean };
     };
     expiresIn?: number | null;
   }
@@ -430,7 +436,6 @@ export async function updateApiKey(
     name?: string;
     permissions?: {
       files: { read: boolean; write: boolean; delete: boolean };
-      analytics: { read: boolean };
     };
     isActive?: boolean;
   }

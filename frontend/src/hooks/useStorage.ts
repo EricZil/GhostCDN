@@ -75,7 +75,6 @@ export interface StorageReport {
     id: string;
     filename: string;
     size: number;
-    views: number;
     uploadedAt: string;
   }>;
 }

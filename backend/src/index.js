@@ -133,7 +133,7 @@ async function warmupCache() {
       LIMIT 10
     `;
     if (fileTypes.length > 0) {
-      await cache.set('common-file-types', fileTypes, 60 * 60 * 1000, cache.namespaces.ANALYTICS);
+      await cache.set('common-file-types', fileTypes, 60 * 60 * 1000, cache.namespaces.SYSTEM);
       console.log('[Cache Warmup] Common file types cached');
     }
     
@@ -147,7 +147,7 @@ async function warmupCache() {
         totalFiles: totalStats._count.id || 0,
         totalSize: totalStats._sum.fileSize || 0,
         timestamp: new Date().toISOString()
-      }, 30 * 60 * 1000, cache.namespaces.ANALYTICS);
+      }, 30 * 60 * 1000, cache.namespaces.SYSTEM);
       console.log('[Cache Warmup] Total stats cached');
     }
     

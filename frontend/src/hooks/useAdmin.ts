@@ -6,7 +6,6 @@ interface AdminStats {
   totalUsers: number;
   totalFiles: number;
   totalStorage: number;
-  totalBandwidth: number;
   usersToday: number;
   filesThisWeek: number;
   systemHealth: {
@@ -19,7 +18,7 @@ interface AdminStats {
     action: string;
     details: string;
     time: string;
-    severity: string;
+    severity: 'high' | 'medium' | 'low';
     user: string;
   }>;
 }
@@ -43,25 +42,13 @@ interface AdminFile {
   fileSize: number;
   fileType: string;
   uploadedAt: string;
-  viewCount: number;
   owner: {
     name: string;
     email: string;
   };
 }
 
-interface AdminAnalytics {
-  totalViews: number;
-  totalUploads: number;
-  topFiles: Array<{
-    fileName: string;
-    views: number;
-    fileSize: number;
-  }>;
-  userGrowth: number;
-  storageGrowth: number;
-  period: string;
-}
+
 
 interface SystemSettings {
   userRegistration: boolean;
@@ -105,7 +92,6 @@ const adminQueryKeys = {
     ['admin', 'users', { search, role, page, limit }],
   files: (search?: string, type?: string, page = 1, limit = 20) => 
     ['admin', 'files', { search, type, page, limit }],
-  analytics: (period = '7d') => ['admin', 'analytics', period],
   settings: () => ['admin', 'settings'],
   logs: (level?: string, source?: string, page = 1, limit = 50) => 
     ['admin', 'logs', { level, source, page, limit }],
@@ -267,20 +253,7 @@ export const useAdmin = () => {
     });
   };
 
-  // Analytics Query
-  const useAnalytics = (period = '7d') => {
-    return useQuery({
-      queryKey: adminQueryKeys.analytics(period),
-      queryFn: async () => {
-        const data = await makeAdminRequest(`/analytics?period=${period}`);
-        return data as AdminAnalytics;
-      },
-      enabled: !!user && user.role === 'ADMIN',
-      staleTime: 10 * 60 * 1000, // 10 minutes
-      gcTime: 15 * 60 * 1000, // 15 minutes
-      refetchOnWindowFocus: false,
-    });
-  };
+
 
   // System Settings Query
   const settingsQuery = useQuery({
@@ -427,7 +400,6 @@ export const useAdmin = () => {
     overviewQuery,
     useUsers,
     useFiles,
-    useAnalytics,
     settingsQuery,
     useLogs,
     messagesQuery,

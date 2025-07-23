@@ -690,12 +690,7 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                                 </div>
                                 <div className="text-sm text-gray-400">Total Size</div>
                               </div>
-                              <div className="bg-black/50 p-6 rounded-xl border border-gray-800">
-                                <div className="text-3xl font-bold text-white mb-1">
-                                  {dashboardStats?.bandwidthUsed !== undefined ? formatFileSize(dashboardStats.bandwidthUsed) : '∞'}
-                                </div>
-                                <div className="text-sm text-gray-400">Bandwidth</div>
-                              </div>
+
                             </div>
                           </div>
                         )}
