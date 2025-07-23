@@ -32,15 +32,7 @@ router.post('/files/presigned-url',
         });
       }
 
-      // Validate file size (50GB limit for CLI/API users)
-      const maxSize = 50 * 1024 * 1024 * 1024; // 50GB for CLI uploads
-      if (fileSize > maxSize) {
-        return res.status(400).json({
-          success: false,
-          error: `File size exceeds the limit of ${maxSize / (1024 * 1024 * 1024)}GB`,
-          code: 'FILE_TOO_LARGE'
-        });
-      }
+      // No file size limit for CLI/API users (unlimited uploads)
 
       // Extract upload settings from the request body
       const uploadOptions = {

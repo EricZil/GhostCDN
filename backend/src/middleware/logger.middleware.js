@@ -191,7 +191,7 @@ const apiRequestLogger = async (req, res, next) => {
   const start = Date.now();
   
   // Only log important endpoints to avoid spam
-  const importantEndpoints = ['/api/admin', '/api/upload', '/api/dashboard'];
+  const importantEndpoints = ['/api/admin', '/api/upload', '/api/dashboard', '/api/v1', '/upload'];
   const shouldLog = importantEndpoints.some(endpoint => req.url.startsWith(endpoint));
   
   if (shouldLog) {

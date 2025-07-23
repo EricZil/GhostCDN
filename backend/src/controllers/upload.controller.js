@@ -119,38 +119,42 @@ class UploadController {
         });
       }
       
-      // Validate file size for registered users (50GB limit for CLI, 100MB for web)
       // Check if this is a CLI request (has API key authentication)
       const isCliRequest = req.headers.authorization && req.headers.authorization.startsWith('Bearer ') && req.headers.authorization.length > 50;
-      const maxSize = isCliRequest ? 50 * 1024 * 1024 * 1024 : 100 * 1024 * 1024; // 50GB for CLI, 100MB for web
-      const sizeUnit = isCliRequest ? 'GB' : 'MB';
-      const sizeLimit = isCliRequest ? maxSize / (1024 * 1024 * 1024) : maxSize / (1024 * 1024);
       
       // Store CLI detection for later use
       req.isCliUpload = isCliRequest;
       
-      if (fileSize > maxSize) {
-        return res.status(400).json({
-          success: false,
-          message: `File size exceeds the limit of ${sizeLimit}${sizeUnit} for ${isCliRequest ? 'CLI' : 'web'} uploads`
-        });
+      // Validate file size - unlimited for CLI, 100MB for web
+      if (!isCliRequest) {
+        const maxSize = 100 * 1024 * 1024; // 100MB for web
+        if (fileSize > maxSize) {
+          return res.status(400).json({
+            success: false,
+            message: `File size exceeds the limit of ${maxSize / (1024 * 1024)}MB for web uploads`
+          });
+        }
       }
+      // No file size limit for CLI uploads
       
-      // Check user storage quota (10GB limit)
-      const storageLimit = 10 * 1024 * 1024 * 1024; // 10GB in bytes
-      const quotaValidation = await this.validateUserStorageQuota(req.user.id, fileSize, storageLimit);
-      
-      if (!quotaValidation.valid) {
-        return res.status(400).json({
-          success: false,
-          message: quotaValidation.message,
-          quota: {
-            currentUsage: quotaValidation.currentUsage,
-            storageLimit: quotaValidation.storageLimit,
-            availableSpace: quotaValidation.availableSpace
-          }
-        });
+      // Check user storage quota (10GB limit) - bypass for CLI uploads
+      if (!isCliRequest) {
+        const storageLimit = 10 * 1024 * 1024 * 1024; // 10GB in bytes
+        const quotaValidation = await this.validateUserStorageQuota(req.user.id, fileSize, storageLimit);
+        
+        if (!quotaValidation.valid) {
+          return res.status(400).json({
+            success: false,
+            message: quotaValidation.message,
+            quota: {
+              currentUsage: quotaValidation.currentUsage,
+              storageLimit: quotaValidation.storageLimit,
+              availableSpace: quotaValidation.availableSpace
+            }
+          });
+        }
       }
+      // No storage quota limit for CLI uploads
       
       // Extract upload settings from the request body
       const uploadOptions = {

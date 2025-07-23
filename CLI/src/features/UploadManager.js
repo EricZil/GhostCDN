@@ -6,6 +6,7 @@ const ora = require('ora');
 const axios = require('axios');
 const FormData = require('form-data');
 const mimeTypes = require('mime-types');
+const { openFileDialogWithFallback, isNativeFileDialogSupported } = require('../utils/nativeFileDialog');
 
 const {
   API_BASE_URL,
@@ -97,7 +98,7 @@ class UploadManager {
       {
         name: '📁 Browse and select file',
         value: 'browse',
-        description: 'Open file browser to select a file'
+        description: isNativeFileDialogSupported() ? 'Open native file explorer to select a file' : 'Open file browser to select a file'
       },
       {
         name: '⌨️  Enter file path manually',
@@ -137,12 +138,22 @@ class UploadManager {
   }
 
   /**
-   * Browse for file using simple directory listing
+   * Browse for file using native file dialog with fallback
    */
   async browseForFile() {
     try {
-      showInfo('Starting file browser...');
-      return await this.browseDirectory(process.cwd());
+      if (isNativeFileDialogSupported()) {
+         const filePath = await openFileDialogWithFallback();
+         if (filePath) {
+           return filePath;
+         } else {
+           showWarning('No file selected');
+           return null;
+         }
+       } else {
+        showInfo('Starting file browser...');
+        return await this.browseDirectory(process.cwd());
+      }
     } catch (error) {
       showError('Could not open file browser');
       return await this.getFilePathManually();
@@ -343,17 +354,7 @@ class UploadManager {
         return null;
       }
 
-      // Check file type (optional warning)
-      if (!SUPPORTED_FILE_TYPES.includes(mimeType)) {
-        const shouldContinue = await showConfirmation(
-          `File type "${mimeType}" may not be optimally supported. Continue anyway?`,
-          false
-        );
-        
-        if (!shouldContinue) {
-          return null;
-        }
-      }
+      // All file types are supported - no validation needed
 
       // Show file information
       console.log(chalk.cyan('\n📋 File Information:'));
@@ -374,28 +375,25 @@ class UploadManager {
    * Get upload options from user
    */
   async getUploadOptions(fileInfo) {
-    console.log(chalk.cyan('\n⚙️  Upload Options:'));
-    
-    // Load saved settings as defaults
-    const savedOptions = this.settings.getUploadOptions();
-    console.log(chalk.dim('Using saved preferences. Change them in Settings if needed.\n'));
-
     // Check if file is an image
     const isImage = fileInfo.mimeType.startsWith('image/');
     
-    // Build prompts array conditionally
-    const prompts = [
-      {
-        type: 'confirm',
-        name: 'preserveFilename',
-        message: 'Preserve original filename?',
-        default: savedOptions.preserveFilename
-      }
-    ];
-
-    // Only add image-specific options for image files
+    // Only show upload options for image files
     if (isImage) {
-      prompts.push(
+      console.log(chalk.cyan('\n⚙️  Upload Options:'));
+      
+      // Load saved settings as defaults
+      const savedOptions = this.settings.getUploadOptions();
+      console.log(chalk.dim('Using saved preferences. Change them in Settings if needed.\n'));
+
+      // Build prompts array for images
+      const prompts = [
+        {
+          type: 'confirm',
+          name: 'preserveFilename',
+          message: 'Preserve original filename?',
+          default: savedOptions.preserveFilename
+        },
         {
           type: 'confirm',
           name: 'optimize',
@@ -407,43 +405,61 @@ class UploadManager {
           name: 'generateThumbnails',
           message: 'Generate thumbnails?',
           default: savedOptions.generateThumbnails
+        },
+        {
+          type: 'input',
+          name: 'customName',
+          message: 'Custom display name (optional):',
+          default: savedOptions.customName || ''
         }
-      );
+      ];
+
+      const options = await inquirer.prompt(prompts);
+      
+      // All files are public by default
+      options.isPublic = true;
+
+      // Confirm upload
+      console.log(chalk.cyan('\n📤 Ready to Upload:'));
+      console.log(`File: ${chalk.white(fileInfo.name)}`);
+      console.log(`Size: ${chalk.white(formatBytes(fileInfo.size))}`);
+      console.log(`Public: ${chalk.green('Yes')} ${chalk.dim('(all files are public)')}`);
+      console.log(`Optimize: ${options.optimize ? chalk.green('Yes') : chalk.red('No')}`);
+      console.log(`Thumbnails: ${options.generateThumbnails ? chalk.green('Yes') : chalk.red('No')}`);
+
+      const confirmed = await showConfirmation('Proceed with upload?', true);
+      
+      if (!confirmed) {
+        return null;
+      }
+
+      return options;
+    } else {
+      // For non-image files, use default options without showing upload options menu
+      const savedOptions = this.settings.getUploadOptions();
+      
+      const options = {
+        preserveFilename: savedOptions.preserveFilename,
+        optimize: false,
+        generateThumbnails: false,
+        customName: savedOptions.customName || '',
+        isPublic: true
+      };
+
+      // Confirm upload directly
+      console.log(chalk.cyan('\n📤 Ready to Upload:'));
+      console.log(`File: ${chalk.white(fileInfo.name)}`);
+      console.log(`Size: ${chalk.white(formatBytes(fileInfo.size))}`);
+      console.log(`Public: ${chalk.green('Yes')} ${chalk.dim('(all files are public)')}`);
+
+      const confirmed = await showConfirmation('Proceed with upload?', true);
+      
+      if (!confirmed) {
+        return null;
+      }
+
+      return options;
     }
-
-    prompts.push({
-      type: 'input',
-      name: 'customName',
-      message: 'Custom display name (optional):',
-      default: savedOptions.customName || ''
-    });
-
-    const options = await inquirer.prompt(prompts);
-
-    // Set default values for image options if not an image
-    if (!isImage) {
-      options.optimize = false;
-      options.generateThumbnails = false;
-    }
-
-    // All files are public by default
-    options.isPublic = true;
-
-    // Confirm upload
-    console.log(chalk.cyan('\n📤 Ready to Upload:'));
-    console.log(`File: ${chalk.white(fileInfo.name)}`);
-    console.log(`Size: ${chalk.white(formatBytes(fileInfo.size))}`);
-    console.log(`Public: ${chalk.green('Yes')} ${chalk.dim('(all files are public)')}`);
-    console.log(`Optimize: ${options.optimize ? chalk.green('Yes') : chalk.red('No')}`);
-    console.log(`Thumbnails: ${options.generateThumbnails ? chalk.green('Yes') : chalk.red('No')}`);
-
-    const confirmed = await showConfirmation('Proceed with upload?', true);
-    
-    if (!confirmed) {
-      return null;
-    }
-
-    return options;
   }
 
   /**
