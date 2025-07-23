@@ -9,10 +9,10 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
-    "build": "pkg . --targets node16-win-x64 --out-path dist",
-    "build:win": "pkg . --targets node16-win-x64 --out-path dist",
-    "build:mac": "pkg . --targets node16-macos-x64 --out-path dist",
-    "build:linux": "pkg . --targets node16-linux-x64 --out-path dist",
+    "build": "pkg . --targets node18-win-x64 --out-path dist",
+    "build:win": "pkg . --targets node18-win-x64 --out-path dist",
+    "build:mac": "pkg . --targets node18-macos-x64 --out-path dist",
+    "build:linux": "pkg . --targets node18-linux-x64 --out-path dist",
     "build:all": "npm run build:win && npm run build:mac && npm run build:linux"
   },
   "keywords": [
@@ -40,10 +40,10 @@
     "pkg": "^5.8.1"
   },
   "engines": {
-    "node": ">=16.0.0"
+    "node": ">=18.0.0"
   },
   "pkg": {
-    "targets": ["node16-win-x64", "node16-macos-x64", "node16-linux-x64"],
+    "targets": ["node18-win-x64", "node18-macos-x64", "node18-linux-x64"],
     "outputPath": "dist"
   }
 }

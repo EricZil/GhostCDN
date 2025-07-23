@@ -33,27 +33,32 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: latest
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-          cache-dependency-path: '${{ env.CLI_DIR }}/package-lock.json'
+          cache: 'pnpm'
+          cache-dependency-path: '${{ env.CLI_DIR }}/pnpm-lock.yaml'
 
       - name: Install CLI dependencies
         working-directory: ${{ env.CLI_DIR }}
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Run security audit
         working-directory: ${{ env.CLI_DIR }}
-        run: npm audit --audit-level=moderate
+        run: pnpm audit --audit-level=moderate
 
       - name: Check for vulnerabilities
         working-directory: ${{ env.CLI_DIR }}
         run: |
-          if npm audit --audit-level=high --json | jq '.vulnerabilities | length' | grep -v '^0$'; then
+          if pnpm audit --audit-level=high --json | jq '.vulnerabilities | length' | grep -v '^0$'; then
             echo "High severity vulnerabilities found!"
-            npm audit --audit-level=high
+            pnpm audit --audit-level=high
             exit 1
           fi
 
@@ -92,12 +97,17 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: latest
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-          cache-dependency-path: '${{ env.CLI_DIR }}/package-lock.json'
+          cache: 'pnpm'
+          cache-dependency-path: '${{ env.CLI_DIR }}/pnpm-lock.yaml'
 
       - name: Configure Git
         run: |
@@ -125,7 +135,7 @@ jobs:
         working-directory: ${{ env.CLI_DIR }}
         run: |
           BUMP_TYPE="${{ steps.version-bump.outputs.bump }}"
-          NEW_VERSION=$(npm version $BUMP_TYPE --no-git-tag-version)
+          NEW_VERSION=$(pnpm version $BUMP_TYPE --no-git-tag-version)
           echo "version=${NEW_VERSION#v}" >> $GITHUB_OUTPUT
           echo "tag=cli-${NEW_VERSION}" >> $GITHUB_OUTPUT
           
@@ -188,16 +198,21 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: latest
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-          cache-dependency-path: '${{ env.CLI_DIR }}/package-lock.json'
+          cache: 'pnpm'
+          cache-dependency-path: '${{ env.CLI_DIR }}/pnpm-lock.yaml'
 
       - name: Install dependencies
         working-directory: ${{ env.CLI_DIR }}
-        run: npm ci --production
+        run: pnpm install --frozen-lockfile --prod
 
       - name: Get version info
         id: version-info
@@ -227,6 +242,7 @@ jobs:
           EOF
 
       - name: Build executable
+        id: build
         shell: bash
         working-directory: ${{ env.CLI_DIR }}
         run: |
@@ -241,6 +257,7 @@ jobs:
             --output "dist/${FILENAME}" \
             --compress GZip
           
+          echo "executable_name=${FILENAME}" >> $GITHUB_OUTPUT
           echo "EXECUTABLE_NAME=${FILENAME}" >> $GITHUB_ENV
 
       - name: Test executable
@@ -248,11 +265,12 @@ jobs:
         working-directory: ${{ env.CLI_DIR }}
         run: |
           # Basic smoke test
+          EXECUTABLE_NAME="${{ steps.build.outputs.executable_name }}"
           if [[ "${{ matrix.platform }}" == "win" ]]; then
-            ./dist/${{ env.EXECUTABLE_NAME }} --version || echo "Version check completed"
+            ./dist/${EXECUTABLE_NAME} --version || echo "Version check completed"
           else
-            chmod +x ./dist/${{ env.EXECUTABLE_NAME }}
-            ./dist/${{ env.EXECUTABLE_NAME }} --version || echo "Version check completed"
+            chmod +x ./dist/${EXECUTABLE_NAME}
+            ./dist/${EXECUTABLE_NAME} --version || echo "Version check completed"
           fi
 
       - name: Generate checksums
@@ -260,13 +278,14 @@ jobs:
         working-directory: ${{ env.CLI_DIR }}
         run: |
           cd dist
+          EXECUTABLE_NAME="${{ steps.build.outputs.executable_name }}"
           if command -v sha256sum >/dev/null 2>&1; then
-            sha256sum ${{ env.EXECUTABLE_NAME }} > ${{ env.EXECUTABLE_NAME }}.sha256
+            sha256sum ${EXECUTABLE_NAME} > ${EXECUTABLE_NAME}.sha256
           elif command -v shasum >/dev/null 2>&1; then
-            shasum -a 256 ${{ env.EXECUTABLE_NAME }} > ${{ env.EXECUTABLE_NAME }}.sha256
+            shasum -a 256 ${EXECUTABLE_NAME} > ${EXECUTABLE_NAME}.sha256
           else
             # Windows fallback
-            powershell -Command "Get-FileHash ${{ env.EXECUTABLE_NAME }} -Algorithm SHA256 | Select-Object Hash | Format-Table -HideTableHeaders" > ${{ env.EXECUTABLE_NAME }}.sha256
+            powershell -Command "Get-FileHash ${EXECUTABLE_NAME} -Algorithm SHA256 | Select-Object Hash | Format-Table -HideTableHeaders" > ${EXECUTABLE_NAME}.sha256
           fi
 
       - name: Upload build artifacts
@@ -274,8 +293,8 @@ jobs:
         with:
           name: executable-${{ matrix.platform }}-${{ matrix.arch }}
           path: |
-            ${{ env.CLI_DIR }}/dist/${{ env.EXECUTABLE_NAME }}
-            ${{ env.CLI_DIR }}/dist/${{ env.EXECUTABLE_NAME }}.sha256
+            ${{ env.CLI_DIR }}/dist/${{ steps.build.outputs.executable_name }}
+            ${{ env.CLI_DIR }}/dist/${{ steps.build.outputs.executable_name }}.sha256
           retention-days: 30
 
   # Create GitHub release
