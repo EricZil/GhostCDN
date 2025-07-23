@@ -9,11 +9,11 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
-    "build": "pkg . --targets node18-win-x64 --out-path dist",
-    "build:win": "pkg . --targets node18-win-x64 --out-path dist",
-    "build:mac": "pkg . --targets node18-macos-x64 --out-path dist",
-    "build:linux": "pkg . --targets node18-linux-x64 --out-path dist",
-    "build:all": "npm run build:win && npm run build:mac && npm run build:linux"
+    "build": "node build-sea.js",
+    "build:win": "node build-sea.js --platform=win32",
+    "build:mac": "node build-sea.js --platform=darwin",
+    "build:linux": "node build-sea.js --platform=linux",
+    "build:all": "pnpm run build:win && pnpm run build:mac && pnpm run build:linux"
   },
   "keywords": [
     "cli",
@@ -25,25 +25,19 @@
   "author": "GhostCDN Team",
   "license": "MIT",
   "dependencies": {
-    "axios": "^1.6.2",
-    "chalk": "^4.1.2",
-    "clipboardy": "^2.3.0",
-    "form-data": "^4.0.0",
-    "inquirer": "^8.2.6",
-    "mime-types": "^2.1.35",
-    "ora": "^5.4.1"
+    "axios": "^1.11.0",
+    "chalk": "^5.4.1",
+    "clipboardy": "^4.0.0",
+    "form-data": "^4.0.4",
+    "inquirer": "^12.8.2",
+    "mime-types": "^3.0.1",
+    "ora": "^8.2.0"
   },
   "devDependencies": {
     "esbuild": "^0.25.8",
-    "nexe": "5.0.0-beta.4",
-    "nodemon": "^3.0.2",
-    "pkg": "^5.8.1"
+    "nodemon": "^3.1.10"
   },
   "engines": {
-    "node": ">=18.0.0"
-  },
-  "pkg": {
-    "targets": ["node18-win-x64", "node18-macos-x64", "node18-linux-x64"],
-    "outputPath": "dist"
+    "node": ">=21.0.0"
   }
 }

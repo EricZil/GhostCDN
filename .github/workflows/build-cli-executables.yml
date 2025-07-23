@@ -21,7 +21,7 @@ on:
           - major
 
 env:
-  NODE_VERSION: '18'
+  NODE_VERSION: '21'
   CLI_DIR: './CLI'
 
 jobs:
@@ -249,13 +249,34 @@ jobs:
           # Create output directory
           mkdir -p dist
           
-          # Build executable with pkg
-          FILENAME="ghostcdn-cli-v${{ steps.version-info.outputs.version }}-${{ steps.version-info.outputs.git_hash }}-${{ matrix.platform }}-${{ matrix.arch }}${{ matrix.ext }}"
+          # Install postject globally for SEA building
+          npm install -g postject
           
-          npx pkg . \
-            --target "node18-${{ matrix.platform }}-${{ matrix.arch }}" \
-            --output "dist/${FILENAME}" \
-            --compress GZip
+          # Build executable with Node.js SEA
+          PLATFORM_MAP="${{ matrix.platform }}"
+          if [ "${{ matrix.platform }}" = "win" ]; then
+            PLATFORM_MAP="win32"
+          elif [ "${{ matrix.platform }}" = "macos" ]; then
+            PLATFORM_MAP="darwin"
+          fi
+          
+          node build-sea.js --platform=${PLATFORM_MAP}
+          
+          # Find the generated executable
+          if [ "${{ matrix.platform }}" = "win" ]; then
+            GENERATED_FILE="ghostcdn-cli.exe"
+          else
+            GENERATED_FILE="ghostcdn-cli"
+          fi
+          
+          # Rename to include version and platform info
+          FILENAME="ghostcdn-cli-v${{ steps.version-info.outputs.version }}-${{ steps.version-info.outputs.git_hash }}-${{ matrix.platform }}-${{ matrix.arch }}${{ matrix.ext }}"
+          mv "dist/${GENERATED_FILE}" "dist/${FILENAME}"
+          
+          # Also rename the checksum file
+          if [ -f "dist/${GENERATED_FILE}.sha256" ]; then
+            mv "dist/${GENERATED_FILE}.sha256" "dist/${FILENAME}.sha256"
+          fi
           
           echo "executable_name=${FILENAME}" >> $GITHUB_OUTPUT
           echo "EXECUTABLE_NAME=${FILENAME}" >> $GITHUB_ENV
