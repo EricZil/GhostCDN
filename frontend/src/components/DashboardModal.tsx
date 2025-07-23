@@ -132,6 +132,7 @@ export default function DashboardModal({ isOpen, onClose }: DashboardModalProps)
     createMessageMutation,
     updateMessageMutation,
     deleteMessageMutation,
+    manualCleanupMutation,
   } = useAdmin();
 
   // Local state for UI interactions
@@ -722,6 +723,7 @@ export default function DashboardModal({ isOpen, onClose }: DashboardModalProps)
             toggleMessageStatus={toggleMessageStatus}
             deleteMessage={deleteMessage}
             isSystemMessage={isSystemMessage}
+            manualCleanup={manualCleanupMutation}
           />
         );
 

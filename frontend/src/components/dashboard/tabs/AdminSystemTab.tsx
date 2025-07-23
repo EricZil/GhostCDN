@@ -21,6 +21,10 @@ interface AdminSystemTabProps {
   toggleMessageStatus: (id: string, isActive: boolean) => void;
   deleteMessage: (id: string) => void;
   isSystemMessage: (message: unknown) => message is SystemMessage;
+  manualCleanup: {
+    mutate: () => void;
+    isPending: boolean;
+  };
 }
 
 export const AdminSystemTab: React.FC<AdminSystemTabProps> = ({
@@ -35,7 +39,8 @@ export const AdminSystemTab: React.FC<AdminSystemTabProps> = ({
   showNotification,
   toggleMessageStatus,
   deleteMessage,
-  isSystemMessage
+  isSystemMessage,
+  manualCleanup
 }) => {
   const handleSettingToggle = (key: string, value: boolean) => {
     setSystemSettings((prev: Record<string, unknown>) => ({ ...prev, [key]: value }));
@@ -64,6 +69,10 @@ export const AdminSystemTab: React.FC<AdminSystemTabProps> = ({
     } catch {
       // Error handling would be done in the parent component
     }
+  };
+
+  const handleManualCleanup = () => {
+    manualCleanup.mutate();
   };
 
   return (
@@ -150,6 +159,40 @@ export const AdminSystemTab: React.FC<AdminSystemTabProps> = ({
                 className="w-full px-3 py-2 bg-black/50 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-purple-500" 
               />
             </div>
+          </div>
+        </div>
+      </div>
+
+      {/* System Maintenance Section */}
+      <div className="bg-[rgba(20,20,35,0.6)] rounded-xl p-6 border border-gray-800/40">
+        <h4 className="text-lg font-semibold text-white mb-4">System Maintenance</h4>
+        <div className="space-y-4">
+          <div className="flex items-center justify-between p-4 bg-[rgba(15,15,25,0.5)] rounded-lg border border-gray-800/30">
+            <div>
+              <p className="text-white font-medium">Manual Cleanup</p>
+              <p className="text-sm text-gray-400">Remove expired guest uploads and free up storage space</p>
+            </div>
+            <button
+              onClick={handleManualCleanup}
+              disabled={manualCleanup.isPending}
+              className="px-4 py-2 bg-orange-500/20 text-orange-400 rounded-lg border border-orange-500/30 hover:bg-orange-500/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            >
+              {manualCleanup.isPending ? (
+                <>
+                  <svg className="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  Running...
+                </>
+              ) : (
+                <>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                  Run Cleanup
+                </>
+              )}
+            </button>
           </div>
         </div>
       </div>

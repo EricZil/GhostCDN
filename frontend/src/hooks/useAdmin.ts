@@ -395,6 +395,20 @@ export const useAdmin = () => {
     },
   });
 
+  // Manual Cleanup Mutation
+  const manualCleanupMutation = useMutation({
+    mutationFn: async () => {
+      const data = await makeAdminRequest('/cleanup/run', {
+        method: 'POST',
+      });
+      return data as { deletedCount: number; errorCount: number; message: string };
+    },
+    onSuccess: () => {
+      // Invalidate overview query to refresh stats
+      queryClient.invalidateQueries({ queryKey: adminQueryKeys.overview() });
+    },
+  });
+
   return {
     // Queries
     overviewQuery,
@@ -412,6 +426,7 @@ export const useAdmin = () => {
     createMessageMutation,
     updateMessageMutation,
     deleteMessageMutation,
+    manualCleanupMutation,
     
     // Legacy state for backward compatibility (will be removed)
     loading: overviewQuery.isLoading || settingsQuery.isLoading || messagesQuery.isLoading,

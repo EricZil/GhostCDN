@@ -88,12 +88,12 @@ export default function Navbar({ onUploadClick, onOpenAuth, onHomeClick }: Navba
           </div>
           
           <div className="nav-item group relative mx-1">
-            <span className="nav-label">Explore</span>
-            <Link href="/explore" className="flex items-center justify-center w-12 h-12 rounded-full glass-highlight">
+            <span className="nav-label">Documentation</span>
+            <Link href="/docs" className="flex items-center justify-center w-12 h-12 rounded-full glass-highlight">
               <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-white/80" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9" />
               </svg>
-              <span className="sr-only">Explore</span>
+              <span className="sr-only">Documentation</span>
             </Link>
           </div>
           
