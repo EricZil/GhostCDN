@@ -199,7 +199,7 @@ export function useDashboard() {
   // Delete file mutation
   const deleteFileMutation = useMutation({
     mutationFn: async (fileId: string) => {
-      const response = await callDashboardAPI('delete', 'DELETE', { fileId });
+      const response = await callDashboardAPI('file', 'DELETE', undefined, { fileId });
       if (response.success) {
         return response.data;
       }
