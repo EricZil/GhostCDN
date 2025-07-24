@@ -1,11 +1,13 @@
+const { withSentryConfig } = require('@sentry/nextjs');
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  experimental: {
+  },
   eslint: {
-    // This allows production builds to complete even if there are ESLint errors
     ignoreDuringBuilds: true,
   },
   typescript: {
-    // This allows production builds to complete even if there are TypeScript errors
     ignoreBuildErrors: true,
   },
   images: {
@@ -57,4 +59,10 @@ const nextConfig = {
   },
 };
 
-module.exports = nextConfig; 
+module.exports = withSentryConfig(nextConfig, {
+  silent: !process.env.CI,
+
+  disableLogger: true,
+
+  hideSourceMaps: true,
+});

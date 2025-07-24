@@ -1,6 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { captureException, addBreadcrumb, trackApiCall } from '@/lib/sentry';
 
 interface SystemSettings {
   maintenanceMode: boolean;
@@ -37,16 +38,29 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       setLoading(true);
       setError(null);
       
-      const response = await fetch('/api/proxy?endpoint=public/settings');
+      addBreadcrumb('Fetching system settings', 'api');
       
-      if (!response.ok) {
-        throw new Error('Failed to fetch settings');
-      }
+      const data = await trackApiCall('/api/proxy?endpoint=public/settings', 'GET', async () => {
+        const response = await fetch('/api/proxy?endpoint=public/settings');
+        
+        if (!response.ok) {
+          throw new Error(`Failed to fetch settings: ${response.status} ${response.statusText}`);
+        }
+        
+        return await response.json();
+      });
       
-      const data = await response.json();
       setSettings(data);
+      addBreadcrumb('System settings loaded successfully', 'api', { settingsCount: Object.keys(data).length });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch settings');
+      const errorMessage = err instanceof Error ? err.message : 'Failed to fetch settings';
+      setError(errorMessage);
+      
+      captureException(err as Error, {
+        component: 'SettingsContext',
+        action: 'fetchSettings',
+        endpoint: '/api/proxy?endpoint=public/settings'
+      });
     } finally {
       setLoading(false);
     }
@@ -65,4 +79,4 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       {children}
     </SettingsContext.Provider>
   );
-}; 
+};
