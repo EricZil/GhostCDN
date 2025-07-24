@@ -507,62 +507,7 @@ router.get('/users/:userId/profile', async (req, res) => {
   }
 });
 
-// Send password reset email
-router.post('/users/:userId/reset-password', async (req, res) => {
-  try {
-    const { userId } = req.params;
-    const emailService = require('../services/email.service');
-
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { email: true, name: true }
-    });
-
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    // Generate reset token
-    const crypto = require('crypto');
-    const resetToken = crypto.randomBytes(32).toString('hex');
-    const resetExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
-
-    // Update user with reset token
-    await prisma.user.update({
-      where: { id: userId },
-      data: {
-        passwordResetToken: resetToken,
-        passwordResetExpires: resetExpires
-      }
-    });
-
-    // Send reset email
-    await emailService.sendPasswordResetEmail(user.email, user.name, resetToken);
-
-    // Log admin activity
-    await prisma.activity.create({
-      data: {
-        userId: req.user.id,
-        type: 'SETTINGS_CHANGED',
-        message: `Admin sent password reset to user`,
-        metadata: JSON.stringify({ 
-          targetUserId: userId, 
-          targetEmail: user.email,
-          action: 'password_reset_sent' 
-        }),
-        isAdminActivity: true
-      }
-    });
-
-    res.json({ 
-      success: true, 
-      message: 'Password reset email sent successfully' 
-    });
-  } catch (error) {
-    console.error('Admin password reset error:', error);
-    res.status(500).json({ error: 'Failed to send password reset email' });
-  }
-});
+// Password reset removed - using social authentication only
 
 // Ban user
 router.post('/users/:userId/ban', async (req, res) => {

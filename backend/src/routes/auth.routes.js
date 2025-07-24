@@ -1,185 +1,13 @@
 const express = require('express');
-const bcrypt = require('bcrypt');
-const crypto = require('crypto');
 const { v4: uuidv4 } = require('uuid');
 const prisma = require('../lib/prisma');
-const emailService = require('../services/email.service');
 const storageService = require('../services/storage.service');
-const { checkEmailBan } = require('../middleware/ban.middleware');
 
 const router = express.Router();
 
-// Login endpoint for credentials authentication
-router.post('/login', async (req, res) => {
-  try {
-    const { email, password } = req.body;
+// Password-based login removed - using social authentication only
 
-    if (!email || !password) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Email and password are required' 
-      });
-    }
-
-    const user = await prisma.user.findUnique({
-      where: { email }
-    });
-
-    if (!user || !user.password) {
-      return res.status(401).json({ 
-        success: false, 
-        error: 'Invalid credentials' 
-      });
-    }
-
-    const passwordMatch = await bcrypt.compare(password, user.password);
-
-    if (!passwordMatch) {
-      return res.status(401).json({ 
-        success: false, 
-        error: 'Invalid credentials' 
-      });
-    }
-
-    // Check if user is banned
-    const activeBans = await prisma.userBan.findMany({
-      where: {
-        AND: [
-          {
-            OR: [
-              { userId: user.id },
-              { email }
-            ]
-          },
-          { isActive: true },
-          {
-            OR: [
-              { expiresAt: null }, // Permanent bans
-              { expiresAt: { gt: new Date() } } // Non-expired temporary bans
-            ]
-          }
-        ]
-      }
-    });
-
-    if (activeBans.length > 0) {
-      const ban = activeBans[0]; // Use the first active ban
-      return res.status(403).json({ 
-        success: false,
-        error: 'Account banned',
-        message: 'Your account has been banned. Please contact support.',
-        reason: ban.reason,
-        banType: ban.banType,
-        code: 'ACCOUNT_BANNED'
-      });
-    }
-
-    // Check if email is verified (only for password-based accounts)
-    if (user.password && !user.emailVerified) {
-      return res.status(403).json({ 
-        success: false, 
-        error: 'Please verify your email before signing in. Check your inbox for a verification link.',
-        code: 'EMAIL_NOT_VERIFIED'
-      });
-    }
-
-    // Update last login time
-    await prisma.user.update({
-      where: { id: user.id },
-      data: { lastLogin: new Date() }
-    });
-
-    // Return user data (excluding password)
-    const { password: _, ...userWithoutPassword } = user;
-    
-    res.json({
-      success: true,
-      user: userWithoutPassword
-    });
-  } catch (error) {
-    console.error('Login error:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: 'Internal server error' 
-    });
-  }
-});
-
-// Registration endpoint
-router.post('/register', checkEmailBan, async (req, res) => {
-  try {
-    const { name, email, password } = req.body;
-    
-    // Basic validation
-    if (!name || !email || !password) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Missing required fields' 
-      });
-    }
-    
-    // Check if email already exists
-    const existingUser = await prisma.user.findUnique({
-      where: { email }
-    });
-    
-    if (existingUser) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Email already in use' 
-      });
-    }
-    
-    // Hash password
-    const hashedPassword = await bcrypt.hash(password, 10);
-    
-    // Generate verification token
-    const verificationToken = crypto.randomBytes(32).toString('hex');
-    
-    // Generate a unique folder name for user storage
-    const folderName = uuidv4();
-    
-    // Create user in database
-    const user = await prisma.user.create({
-      data: {
-        name,
-        email,
-        password: hashedPassword,
-        r2FolderName: folderName,
-        verificationToken,
-        createdAt: new Date(),
-      }
-    });
-
-    // Create DigitalOcean Spaces folder for user
-    try {
-      await storageService.createUserFolder(folderName);
-    } catch (error) {
-      console.error("Error creating user folder:", error);
-      // Don't fail registration if folder creation fails
-    }
-
-    // Send verification email
-    try {
-      await emailService.sendVerificationEmail(email, name, verificationToken);
-    } catch (error) {
-      console.error("Error sending verification email:", error);
-      // Don't fail registration if email fails
-    }
-
-    res.status(201).json({ 
-      success: true, 
-      userId: user.id,
-      message: 'Registration successful! Please check your email to verify your account.'
-    });
-  } catch (error) {
-    console.error('Registration error:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: 'Registration failed' 
-    });
-  }
-});
+// Password-based registration removed - using social authentication only
 
 // Social login endpoint
 router.post('/social-login', async (req, res) => {
@@ -193,127 +21,188 @@ router.post('/social-login', async (req, res) => {
       });
     }
 
-    // Check if user already exists
-    let user = await prisma.user.findUnique({
-      where: { email }
-    });
-
-    // Check for bans before allowing social login
-    const activeBans = await prisma.userBan.findMany({
-      where: {
-        AND: [
-          {
-            OR: [
-              { userId: user?.id },
-              { email }
-            ]
-          },
-          { isActive: true },
-          {
-            OR: [
-              { expiresAt: null }, // Permanent bans
-              { expiresAt: { gt: new Date() } } // Non-expired temporary bans
-            ]
-          }
-        ]
-      }
-    });
-
-    if (activeBans.length > 0) {
-      const ban = activeBans[0];
-      return res.status(403).json({ 
-        success: false,
-        error: 'Account banned',
-        message: 'Your account has been banned. Please contact support.',
-        reason: ban.reason,
-        banType: ban.banType,
-        code: 'ACCOUNT_BANNED'
-      });
-    }
-
-    if (!user) {
-      // Create new user for social login
-      const folderName = uuidv4();
-      
-      user = await prisma.user.create({
-        data: {
-          name,
-          email,
-          image,
-          r2FolderName: folderName,
-          role: 'USER',
-          emailVerified: new Date(), // Social logins are considered verified
-          createdAt: new Date(),
-          lastLogin: new Date()
+    // Use a transaction to prevent lock contention and ensure data consistency
+    const result = await prisma.$transaction(async (tx) => {
+      // Check if user already exists
+      let user = await tx.user.findUnique({
+        where: { email },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          image: true,
+          role: true,
+          r2FolderName: true,
+          lastLogin: true,
+          emailVerified: true
         }
       });
 
-      // Create DigitalOcean Spaces folder for user
-      try {
-        await storageService.createUserFolder(folderName);
-      } catch (error) {
-        console.error("Error creating user folder for social login:", error);
-      }
-    } else {
-      // Update existing user
-      user = await prisma.user.update({
-        where: { id: user.id },
-        data: { 
-          lastLogin: new Date(),
-          ...(image && { image }), // Update image if provided
-          // Ensure r2FolderName exists for existing users
-          ...((!user.r2FolderName) && { r2FolderName: uuidv4() })
-        }
-      });
-
-      // Create folder if it doesn't exist
-      if (!user.r2FolderName) {
-        try {
-          await storageService.createUserFolder(user.r2FolderName);
-        } catch (error) {
-          console.error("Error creating missing user folder:", error);
-        }
-      }
-    }
-
-    // Handle the account relationship (similar to Prisma adapter)
-    try {
-      await prisma.account.upsert({
+      // Check for bans before allowing social login - optimized query
+      const currentTime = new Date();
+      const activeBans = await tx.userBan.findFirst({
         where: {
-          provider_providerAccountId: {
+          AND: [
+            { isActive: true },
+            {
+              OR: [
+                {
+                  AND: [
+                    { userId: user?.id },
+                    { userId: { not: null } }
+                  ]
+                },
+                { email: email }
+              ]
+            },
+            {
+              OR: [
+                { expiresAt: null }, // Permanent bans
+                { expiresAt: { gt: currentTime } } // Non-expired temporary bans
+              ]
+            }
+          ]
+        },
+        select: {
+          reason: true,
+          banType: true
+        }
+      });
+
+      if (activeBans) {
+        throw new Error(JSON.stringify({
+          status: 403,
+          success: false,
+          error: 'Account banned',
+          message: 'Your account has been banned. Please contact support.',
+          reason: activeBans.reason,
+          banType: activeBans.banType,
+          code: 'ACCOUNT_BANNED'
+        }));
+      }
+
+      if (!user) {
+        // Create new user for social login
+        const folderName = uuidv4();
+        
+        user = await tx.user.create({
+          data: {
+            name,
+            email,
+            image,
+            r2FolderName: folderName,
+            role: 'USER',
+            emailVerified: currentTime, // Social logins are considered verified
+            lastLogin: currentTime
+          },
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            image: true,
+            role: true,
+            r2FolderName: true,
+            lastLogin: true
+          }
+        });
+
+        // Create DigitalOcean Spaces folder for user (outside transaction to avoid blocking)
+        setImmediate(async () => {
+          try {
+            await storageService.createUserFolder(folderName);
+          } catch (error) {
+            console.error("Error creating user folder for social login:", error);
+          }
+        });
+      } else {
+        // Prepare update data
+        const updateData = { 
+          lastLogin: currentTime
+        };
+        
+        if (image) {
+          updateData.image = image;
+        }
+        
+        // Ensure r2FolderName exists for existing users
+        if (!user.r2FolderName) {
+          updateData.r2FolderName = uuidv4();
+        }
+
+        // Update existing user
+        user = await tx.user.update({
+          where: { id: user.id },
+          data: updateData,
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            image: true,
+            role: true,
+            r2FolderName: true,
+            lastLogin: true
+          }
+        });
+
+        // Create folder if it was just added (outside transaction to avoid blocking)
+        if (updateData.r2FolderName) {
+          setImmediate(async () => {
+            try {
+              await storageService.createUserFolder(updateData.r2FolderName);
+            } catch (error) {
+              console.error("Error creating missing user folder:", error);
+            }
+          });
+        }
+      }
+
+      // Handle the account relationship (similar to Prisma adapter)
+      try {
+        await tx.account.upsert({
+          where: {
+            provider_providerAccountId: {
+              provider,
+              providerAccountId
+            }
+          },
+          update: {
+            userId: user.id
+          },
+          create: {
+            userId: user.id,
+            type: 'oauth',
             provider,
             providerAccountId
           }
-        },
-        update: {
-          userId: user.id
-        },
-        create: {
-          userId: user.id,
-          type: 'oauth',
-          provider,
-          providerAccountId
-        }
-      });
-    } catch (error) {
-      console.error('Error managing account relationship:', error);
-      // Don't fail login if account linking fails
-    }
+        });
+      } catch (error) {
+        console.error('Error managing account relationship:', error);
+        // Don't fail login if account linking fails
+      }
+
+      return user;
+    }, {
+      timeout: 10000, // 10 second timeout
+      isolationLevel: 'ReadCommitted' // Use READ COMMITTED to reduce lock contention
+    });
 
     res.json({
       success: true,
-      user: {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        image: user.image,
-        r2FolderName: user.r2FolderName,
-        lastLogin: user.lastLogin
-      }
+      user: result
     });
   } catch (error) {
     console.error('Social login error:', error);
+    
+    // Handle ban errors specifically
+    if (error.message.startsWith('{')) {
+      try {
+        const banError = JSON.parse(error.message);
+        return res.status(banError.status).json(banError);
+      } catch {
+        // Fall through to generic error
+      }
+    }
+    
     res.status(500).json({ 
       success: false, 
       error: 'Social login failed' 
@@ -486,256 +375,13 @@ router.post('/test-jwt', async (req, res) => {
   }
 });
 
-// Email verification endpoint
-router.post('/verify-email', async (req, res) => {
-  try {
-    const { token } = req.body;
+// Email verification removed - using social authentication only
 
-    if (!token) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Verification token is required' 
-      });
-    }
+// Resend verification removed - using social authentication only
 
-    // Find user with this verification token
-    const user = await prisma.user.findUnique({
-      where: { verificationToken: token }
-    });
+// Password reset removed - using social authentication only
 
-    if (!user) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Invalid or expired verification token' 
-      });
-    }
-
-    if (user.emailVerified) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Email is already verified' 
-      });
-    }
-
-    // Verify the email
-    await prisma.user.update({
-      where: { id: user.id },
-      data: {
-        emailVerified: new Date(),
-        verificationToken: null // Clear the token
-      }
-    });
-
-    // Send welcome email
-    try {
-      await emailService.sendWelcomeEmail(user.email, user.name);
-    } catch (error) {
-      console.error("Error sending welcome email:", error);
-      // Don't fail verification if welcome email fails
-    }
-
-    res.json({
-      success: true,
-      message: 'Email verified successfully! Welcome to GhostCDN.'
-    });
-  } catch (error) {
-    console.error('Email verification error:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: 'Email verification failed' 
-    });
-  }
-});
-
-// Resend verification email endpoint
-router.post('/resend-verification', async (req, res) => {
-  try {
-    const { email } = req.body;
-
-    if (!email) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Email is required' 
-      });
-    }
-
-    // Find user
-    const user = await prisma.user.findUnique({
-      where: { email }
-    });
-
-    if (!user) {
-      return res.status(404).json({ 
-        success: false, 
-        error: 'User not found' 
-      });
-    }
-
-    if (user.emailVerified) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Email is already verified' 
-      });
-    }
-
-    // Rate limiting: Check if user has requested verification email recently (last 60 seconds)
-    const oneMinuteAgo = new Date(Date.now() - 60 * 1000);
-    if (user.updatedAt && user.updatedAt > oneMinuteAgo) {
-      return res.status(429).json({ 
-        success: false, 
-        error: 'Please wait a minute before requesting another verification email.' 
-      });
-    }
-
-    // Generate new verification token
-    const verificationToken = crypto.randomBytes(32).toString('hex');
-
-    // Update user with new token
-    await prisma.user.update({
-      where: { id: user.id },
-      data: { verificationToken: verificationToken }
-    });
-
-    // Send verification email
-    await emailService.sendVerificationEmail(user.email, user.name, verificationToken);
-
-    res.json({
-      success: true,
-      message: 'Verification email sent! Please check your inbox.'
-    });
-  } catch (error) {
-    console.error('Resend verification error:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: 'Failed to resend verification email' 
-    });
-  }
-});
-
-// Request password reset endpoint
-router.post('/forgot-password', async (req, res) => {
-  try {
-    const { email } = req.body;
-
-    if (!email) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Email is required' 
-      });
-    }
-
-    // Find user
-    const user = await prisma.user.findUnique({
-      where: { email }
-    });
-
-    if (!user) {
-      // Don't reveal if user exists for security
-      return res.json({
-        success: true,
-        message: 'If an account with that email exists, we sent a password reset link.'
-      });
-    }
-
-    // Don't allow password reset for social-only accounts
-    if (!user.password) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'This account uses social login. Please sign in with your social provider.' 
-      });
-    }
-
-    // Generate reset token (expires in 1 hour)
-    const resetToken = crypto.randomBytes(32).toString('hex');
-    const resetExpires = new Date(Date.now() + 60 * 60 * 1000); // 1 hour from now
-
-    // Update user with reset token
-    await prisma.user.update({
-      where: { id: user.id },
-      data: {
-        passwordResetToken: resetToken,
-        passwordResetExpires: resetExpires
-      }
-    });
-
-    // Send password reset email
-    await emailService.sendPasswordResetEmail(user.email, user.name, resetToken);
-
-    res.json({
-      success: true,
-      message: 'If an account with that email exists, we sent a password reset link.'
-    });
-  } catch (error) {
-    console.error('Forgot password error:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: 'Failed to process password reset request' 
-    });
-  }
-});
-
-// Reset password endpoint
-router.post('/reset-password', async (req, res) => {
-  try {
-    const { token, newPassword } = req.body;
-
-    if (!token || !newPassword) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Reset token and new password are required' 
-      });
-    }
-
-    // Validate password strength
-    if (newPassword.length < 6) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Password must be at least 6 characters long' 
-      });
-    }
-
-    // Find user with valid reset token
-    const user = await prisma.user.findFirst({
-      where: {
-        passwordResetToken: token,
-        passwordResetExpires: {
-          gt: new Date() // Token not expired
-        }
-      }
-    });
-
-    if (!user) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Invalid or expired reset token' 
-      });
-    }
-
-    // Hash new password
-    const hashedPassword = await bcrypt.hash(newPassword, 12);
-
-    // Update user password and clear reset token
-    await prisma.user.update({
-      where: { id: user.id },
-      data: {
-        password: hashedPassword,
-        passwordResetToken: null,
-        passwordResetExpires: null
-      }
-    });
-
-    res.json({
-      success: true,
-      message: 'Password reset successfully! You can now sign in with your new password.'
-    });
-  } catch (error) {
-    console.error('Reset password error:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: 'Password reset failed' 
-    });
-  }
-});
+// Password reset removed - using social authentication only
 
 // Disconnect account endpoint
 router.post('/accounts/:userId/disconnect', async (req, res) => {
@@ -942,4 +588,4 @@ router.post('/test-ban', async (req, res) => {
   }
 });
 
-module.exports = router; 
+module.exports = router;
