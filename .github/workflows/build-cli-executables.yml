@@ -351,9 +351,21 @@ jobs:
           
           ## 🚀 What's New
           
-          This release includes the following improvements:
+          This release includes critical fixes and improvements:
           
-          - **Fixed all dependency issues**: Resolved ora, inquirer, and chalk compatibility problems
+          ### 🔧 Critical Fixes
+          - **Fixed critical crash issues**: Resolved application crashes that prevented CLI from running
+          - **Fixed settings menu crash**: Eliminated chalk method chaining errors causing settings to fail
+          - **Resolved dependency compatibility**: Fixed ora, inquirer, and chalk compatibility problems
+          - **Enhanced stability**: Improved overall application reliability and error handling
+          
+          ### 📤 Upload Improvements
+          - **Optimized upload performance**: Enhanced file upload speed and reliability
+          - **Better progress tracking**: Improved upload progress indicators and feedback
+          - **Enhanced file handling**: Better support for various file types and sizes
+          - **Improved error recovery**: Better handling of upload failures and retries
+          
+          ### 🐛 Bug Fixes
           - **Replaced inquirer with readline**: All menu interactions now use native readline for better compatibility
           - **Custom spinner implementation**: Replaced ora with custom console-based spinner
           - **Fixed color display**: Resolved chalk.cyan.bold errors with proper color implementation

@@ -2,7 +2,7 @@ const path = require('path');
 const os = require('os');
 
 // API Configuration - Use environment variable or default to production
-const API_BASE_URL = process.env.GHOSTCDN_API_URL || 'https://q1.api.ghostcdn.xyz/api/v1';
+const API_BASE_URL = process.env.GHOSTCDN_API_URL || 'https://api.ghostcdn.xyz/api/v1';
 const WEB_DASHBOARD_URL = process.env.GHOSTCDN_WEB_URL || 'https://ghostcdn.xyz';
 const DOCS_URL = process.env.GHOSTCDN_DOCS_URL || 'https://ghostcdn.xyz/docs';
 
@@ -72,6 +72,41 @@ const UPLOAD_OPTIONS = {
   isPublic: false
 };
 
+// Upload Performance Configuration
+const UPLOAD_PERFORMANCE = {
+  // Multipart upload settings
+  PART_SIZE: 50 * 1024 * 1024, // 50MB per part (smaller = more parallelism)
+  MAX_CONCURRENT_UPLOADS: 4, // Number of simultaneous part uploads
+  
+  // Connection settings
+  PART_TIMEOUT: 180000, // 3 minutes per part
+  CONNECTION_TIMEOUT: 30000, // 30 seconds for getting presigned URLs
+  
+  // Performance profiles for different connection speeds
+  PROFILES: {
+    SLOW: {
+      PART_SIZE: 10 * 1024 * 1024, // 10MB
+      MAX_CONCURRENT_UPLOADS: 1,
+      PART_TIMEOUT: 600000 // 10 minutes
+    },
+    MEDIUM: {
+      PART_SIZE: 25 * 1024 * 1024, // 25MB
+      MAX_CONCURRENT_UPLOADS: 2,
+      PART_TIMEOUT: 300000 // 5 minutes
+    },
+    FAST: {
+      PART_SIZE: 50 * 1024 * 1024, // 50MB
+      MAX_CONCURRENT_UPLOADS: 3,
+      PART_TIMEOUT: 240000 // 4 minutes
+    },
+    ULTRA: {
+      PART_SIZE: 75 * 1024 * 1024, // 75MB
+      MAX_CONCURRENT_UPLOADS: 4,
+      PART_TIMEOUT: 180000 // 3 minutes
+    }
+  }
+};
+
 // Pagination
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 100;
@@ -130,6 +165,7 @@ module.exports = {
   LOG_DIR,
   MAIN_MENU_OPTIONS,
   UPLOAD_OPTIONS,
+  UPLOAD_PERFORMANCE,
   DEFAULT_PAGE_SIZE,
   MAX_PAGE_SIZE,
   API_TIMEOUT,

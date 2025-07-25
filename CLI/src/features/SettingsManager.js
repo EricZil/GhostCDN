@@ -1,4 +1,4 @@
-const inquirer = require('inquirer');
+const readline = require('readline');
 // Simple color functions to replace chalk
 const colors = {
   red: (text) => `\x1b[31m${text}\x1b[0m`,
@@ -17,6 +17,12 @@ const path = require('path');
 const os = require('os');
 
 const { showError, showSuccess, showInfo, showWarning } = require('../utils/display');
+const {
+  UPLOAD_OPTIONS,
+  UPLOAD_PERFORMANCE,
+  CONFIG_DIR
+} = require('../config/constants');
+
 
 class SettingsManager {
   constructor() {
@@ -96,45 +102,42 @@ class SettingsManager {
   async showSettingsMenu() {
     try {
       console.clear();
-      console.log(chalk.cyan.bold('⚙️  GhostCDN CLI Settings\n'));
+      console.log(chalk.cyan('⚙️  GhostCDN CLI Settings\n'));
 
-      const choices = [
-        {
-          name: '📤 Upload Preferences',
-          value: 'upload',
-          short: 'Upload Preferences'
-        },
-        {
-          name: '📋 View Current Settings',
-          value: 'view',
-          short: 'View Settings'
-        },
-        {
-          name: '🔄 Reset to Defaults',
-          value: 'reset',
-          short: 'Reset Settings'
-        },
-        new inquirer.Separator(),
-        {
-          name: '🔙 Back to Main Menu',
-          value: 'back',
-          short: 'Back'
-        }
-      ];
+      console.log('What would you like to configure?\n');
+      console.log('1. 📤 Upload Preferences');
+      console.log('2. 🚀 Upload Performance');
+      console.log('3. 📋 View Current Settings');
+      console.log('4. 🔄 Reset to Defaults');
+      console.log('5. 🔙 Back to Main Menu');
+      console.log();
 
-      const answer = await inquirer.prompt([
-        {
-          type: 'list',
-          name: 'choice',
-          message: 'What would you like to configure?',
-          choices,
-          pageSize: 8
-        }
-      ]);
+      const rl = readline.createInterface({
+        input: process.stdin,
+        output: process.stdout
+      });
 
-      switch (answer.choice) {
+      const choice = await new Promise((resolve) => {
+        rl.question('Enter your choice (1-5): ', (answer) => {
+          rl.close();
+          const choiceNum = parseInt(answer.trim());
+          switch (choiceNum) {
+            case 1: resolve('upload'); break;
+            case 2: resolve('performance'); break;
+            case 3: resolve('view'); break;
+            case 4: resolve('reset'); break;
+            case 5: resolve('back'); break;
+            default: resolve('invalid'); break;
+          }
+        });
+      });
+
+      switch (choice) {
         case 'upload':
           await this.configureUploadSettings();
+          break;
+        case 'performance':
+          await this.configureUploadPerformance();
           break;
         case 'view':
           await this.viewCurrentSettings();
@@ -144,24 +147,128 @@ class SettingsManager {
           break;
         case 'back':
           return;
+        case 'invalid':
+        default:
+          showWarning('Invalid option selected. Please enter a number between 1-5.');
       }
 
       // Ask if user wants to continue in settings
-      const continueAnswer = await inquirer.prompt([
-        {
-          type: 'confirm',
-          name: 'continue',
-          message: 'Continue in settings?',
-          default: false
-        }
-      ]);
+      if (choice !== 'back' && choice !== 'invalid') {
+        const rl2 = readline.createInterface({
+          input: process.stdin,
+          output: process.stdout
+        });
 
-      if (continueAnswer.continue) {
-        await this.showSettingsMenu();
+        const continueChoice = await new Promise((resolve) => {
+          rl2.question('\nContinue in settings? (y/N): ', (answer) => {
+            rl2.close();
+            resolve(answer.toLowerCase().trim() === 'y' || answer.toLowerCase().trim() === 'yes');
+          });
+        });
+
+        if (continueChoice) {
+          await this.showSettingsMenu();
+        }
       }
 
     } catch (error) {
-      showError('An error occurred while managing settings. Please try again.');
+      if (process.argv.includes('--debug')) {
+        console.error('Settings error details:', error);
+        console.error('Stack trace:', error.stack);
+      }
+      showError(`An error occurred while managing settings: ${error.message}`);
+    }
+  }
+
+  /**
+   * Configure upload performance settings
+   */
+  async configureUploadPerformance() {
+    try {
+      const currentSettings = this.loadSettings();
+      const currentProfile = currentSettings.uploadPerformance?.profile || 'FAST';
+
+      console.log(chalk.cyan('\n🚀 Upload Performance Configuration\n'));
+      console.log(chalk.dim('Choose the upload profile that best matches your internet connection.\n'));
+      
+      // Display profile information
+      console.log(chalk.white('Available Profiles:\n'));
+      
+      Object.entries(UPLOAD_PERFORMANCE.PROFILES).forEach(([name, config]) => {
+        const partSizeMB = Math.round(config.PART_SIZE / (1024 * 1024));
+        const timeoutMin = Math.round(config.PART_TIMEOUT / 60000);
+        
+        console.log(chalk.cyan(`${name}:`));
+        console.log(`  • Part Size: ${partSizeMB}MB`);
+        console.log(`  • Concurrent Uploads: ${config.MAX_CONCURRENT_UPLOADS}`);
+        console.log(`  • Timeout: ${timeoutMin} minutes`);
+        
+        if (name === 'SLOW') {
+          console.log(chalk.dim('  • Best for: Slower connections (< 10 Mbps)'));
+        } else if (name === 'MEDIUM') {
+          console.log(chalk.dim('  • Best for: Average connections (10-50 Mbps)'));
+        } else if (name === 'FAST') {
+          console.log(chalk.dim('  • Best for: Fast connections (50+ Mbps) - Recommended'));
+        } else if (name === 'ULTRA') {
+          console.log(chalk.dim('  • Best for: Ultra-fast connections (100+ Mbps)'));
+        }
+        console.log();
+      });
+
+      console.log('Select your upload performance profile:\n');
+      console.log('1. SLOW - Conservative (< 10 Mbps)');
+      console.log('2. MEDIUM - Balanced (10-50 Mbps)');
+      console.log('3. FAST - Optimized (50+ Mbps) - Recommended');
+      console.log('4. ULTRA - Maximum Performance (100+ Mbps)');
+      console.log();
+
+      const rl = readline.createInterface({
+        input: process.stdin,
+        output: process.stdout
+      });
+
+      const profileChoice = await new Promise((resolve) => {
+        rl.question('Enter your choice (1-4): ', (answer) => {
+          rl.close();
+          const choiceNum = parseInt(answer.trim());
+          switch (choiceNum) {
+            case 1: resolve('SLOW'); break;
+            case 2: resolve('MEDIUM'); break;
+            case 3: resolve('FAST'); break;
+            case 4: resolve('ULTRA'); break;
+            default: resolve(currentProfile); break;
+          }
+        });
+      });
+
+      const answer = { profile: profileChoice };
+
+      // Update settings
+      const newSettings = {
+        ...currentSettings,
+        uploadPerformance: {
+          profile: answer.profile
+        }
+      };
+
+      if (this.saveSettings(newSettings)) {
+        const selectedConfig = UPLOAD_PERFORMANCE.PROFILES[answer.profile];
+        const partSizeMB = Math.round(selectedConfig.PART_SIZE / (1024 * 1024));
+        const timeoutMin = Math.round(selectedConfig.PART_TIMEOUT / 60000);
+        
+        showSuccess('Upload performance settings saved successfully!');
+        
+        console.log(chalk.cyan('\n📊 New Performance Settings:'));
+        console.log(`Profile: ${chalk.green(answer.profile)}`);
+        console.log(`Part Size: ${chalk.white(partSizeMB)}MB`);
+        console.log(`Concurrent Uploads: ${chalk.white(selectedConfig.MAX_CONCURRENT_UPLOADS)}`);
+        console.log(`Timeout: ${chalk.white(timeoutMin)} minutes`);
+        console.log(chalk.dim('\nThese settings will be used for large file uploads (>1GB).'));
+        console.log();
+      }
+
+    } catch (error) {
+      showError(`Could not configure upload performance: ${error.message}`);
     }
   }
 
@@ -176,36 +283,57 @@ class SettingsManager {
       console.log(chalk.cyan('\n📤 Upload Preferences Configuration\n'));
       console.log(chalk.dim('These settings will be used as defaults for all uploads.\n'));
 
-      const answers = await inquirer.prompt([
-        {
-          type: 'confirm',
-          name: 'preserveFilename',
-          message: 'Preserve original filename?',
-          default: currentUpload.preserveFilename,
-          suffix: chalk.dim(' (Keep the original file name instead of generating a random one)')
-        },
-        {
-          type: 'confirm',
-          name: 'optimize',
-          message: 'Optimize files (recommended for images)?',
-          default: currentUpload.optimize,
-          suffix: chalk.dim(' (Compress images to reduce file size)')
-        },
-        {
-          type: 'confirm',
-          name: 'generateThumbnails',
-          message: 'Generate thumbnails (for images)?',
-          default: currentUpload.generateThumbnails,
-          suffix: chalk.dim(' (Create smaller preview versions of images)')
-        },
-        {
-          type: 'input',
-          name: 'customName',
-          message: 'Default custom display name (optional):',
-          default: currentUpload.customName,
-          suffix: chalk.dim(' (Leave empty to use filename)')
-        }
-      ]);
+      const rl = readline.createInterface({
+        input: process.stdin,
+        output: process.stdout
+      });
+
+      const preserveFilename = await new Promise((resolve) => {
+        rl.question(`Preserve original filename? (${currentUpload.preserveFilename ? 'Y/n' : 'y/N'}): `, (answer) => {
+          const response = answer.toLowerCase().trim();
+          if (response === '') {
+            resolve(currentUpload.preserveFilename);
+          } else {
+            resolve(response === 'y' || response === 'yes');
+          }
+        });
+      });
+
+      const optimize = await new Promise((resolve) => {
+        rl.question(`Optimize files (recommended for images)? (${currentUpload.optimize ? 'Y/n' : 'y/N'}): `, (answer) => {
+          const response = answer.toLowerCase().trim();
+          if (response === '') {
+            resolve(currentUpload.optimize);
+          } else {
+            resolve(response === 'y' || response === 'yes');
+          }
+        });
+      });
+
+      const generateThumbnails = await new Promise((resolve) => {
+        rl.question(`Generate thumbnails (for images)? (${currentUpload.generateThumbnails ? 'Y/n' : 'y/N'}): `, (answer) => {
+          const response = answer.toLowerCase().trim();
+          if (response === '') {
+            resolve(currentUpload.generateThumbnails);
+          } else {
+            resolve(response === 'y' || response === 'yes');
+          }
+        });
+      });
+
+      const customName = await new Promise((resolve) => {
+        rl.question(`Default custom display name (optional) [${currentUpload.customName || 'none'}]: `, (answer) => {
+          rl.close();
+          resolve(answer.trim() || currentUpload.customName);
+        });
+      });
+
+      const answers = {
+        preserveFilename,
+        optimize,
+        generateThumbnails,
+        customName
+      };
 
       // Update settings
       const newSettings = {
@@ -243,22 +371,37 @@ class SettingsManager {
       
       console.log(chalk.cyan('\n📋 Current Settings\n'));
       
-      console.log(chalk.white.bold('Upload Preferences:'));
+      console.log(chalk.white('Upload Preferences:'));
       console.log(`  Preserve filename: ${settings.uploadOptions.preserveFilename ? chalk.green('Yes') : chalk.red('No')}`);
       console.log(`  Optimize files: ${settings.uploadOptions.optimize ? chalk.green('Yes') : chalk.red('No')}`);
       console.log(`  Generate thumbnails: ${settings.uploadOptions.generateThumbnails ? chalk.green('Yes') : chalk.red('No')}`);
       console.log(`  Default custom name: ${settings.uploadOptions.customName || chalk.dim('(none)')}`);
       
+      console.log(chalk.white('\nUpload Performance:'));
+      const performanceProfile = settings.uploadPerformance?.profile || 'FAST';
+      const profileConfig = UPLOAD_PERFORMANCE.PROFILES[performanceProfile];
+      const partSizeMB = Math.round(profileConfig.PART_SIZE / (1024 * 1024));
+      const timeoutMin = Math.round(profileConfig.PART_TIMEOUT / 60000);
+      
+      console.log(`  Profile: ${chalk.green(performanceProfile)}`);
+      console.log(`  Part Size: ${chalk.white(partSizeMB)}MB`);
+      console.log(`  Concurrent Uploads: ${chalk.white(profileConfig.MAX_CONCURRENT_UPLOADS)}`);
+      console.log(`  Timeout: ${chalk.white(timeoutMin)} minutes`);
+      
       console.log(chalk.dim(`\nSettings file: ${this.settingsFile}`));
       console.log();
 
-      await inquirer.prompt([
-        {
-          type: 'input',
-          name: 'continue',
-          message: 'Press Enter to continue...'
-        }
-      ]);
+      const rl = readline.createInterface({
+        input: process.stdin,
+        output: process.stdout
+      });
+
+      await new Promise((resolve) => {
+        rl.question('Press Enter to continue...', () => {
+          rl.close();
+          resolve();
+        });
+      });
 
     } catch (error) {
       showError(`Could not view settings: ${error.message}`);
@@ -270,16 +413,19 @@ class SettingsManager {
    */
   async resetSettings() {
     try {
-      const confirmed = await inquirer.prompt([
-        {
-          type: 'confirm',
-          name: 'reset',
-          message: 'Are you sure you want to reset all settings to defaults?',
-          default: false
-        }
-      ]);
+      const rl = readline.createInterface({
+        input: process.stdin,
+        output: process.stdout
+      });
 
-      if (confirmed.reset) {
+      const confirmed = await new Promise((resolve) => {
+        rl.question('Are you sure you want to reset all settings to defaults? (y/N): ', (answer) => {
+          rl.close();
+          resolve(answer.toLowerCase().trim() === 'y' || answer.toLowerCase().trim() === 'yes');
+        });
+      });
+
+      if (confirmed) {
         if (this.saveSettings(this.defaultSettings)) {
           showSuccess('Settings reset to defaults successfully!');
         }

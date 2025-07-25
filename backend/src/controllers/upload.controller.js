@@ -275,6 +275,246 @@ class UploadController {
   }
   
   /**
+   * Initiate multipart upload for large files
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   */
+  async initiateMultipartUpload(req, res) {
+    try {
+      const { filename, contentType, fileSize } = req.body;
+      
+      if (!filename || !contentType || !fileSize) {
+        return res.status(400).json({
+          success: false,
+          message: 'Missing required file information'
+        });
+      }
+
+      // Check if user is authenticated (multipart uploads require authentication)
+      if (!req.user) {
+        return res.status(401).json({
+          success: false,
+          message: 'Authentication required for multipart uploads'
+        });
+      }
+
+      // Check if this is a CLI request
+      const isCliRequest = req.headers.authorization && req.headers.authorization.startsWith('Bearer ') && req.headers.authorization.length > 50;
+      
+      // Validate file size - 50GB limit for CLI, 100MB for web (web should use regular upload)
+      if (!isCliRequest) {
+        const maxSize = 100 * 1024 * 1024; // 100MB for web
+        if (fileSize > maxSize) {
+          return res.status(400).json({
+            success: false,
+            message: `File size exceeds the limit of ${maxSize / (1024 * 1024)}MB for web uploads. Use regular upload for smaller files.`
+          });
+        }
+      } else {
+        const maxSize = 50 * 1024 * 1024 * 1024; // 50GB for CLI
+        if (fileSize > maxSize) {
+          return res.status(400).json({
+            success: false,
+            message: `File size exceeds the limit of ${maxSize / (1024 * 1024 * 1024)}GB for CLI uploads`
+          });
+        }
+      }
+
+      // Check user storage quota for web uploads (bypass for CLI)
+      if (!isCliRequest) {
+        const storageLimit = 10 * 1024 * 1024 * 1024; // 10GB in bytes
+        const quotaValidation = await this.validateUserStorageQuota(req.user.id, fileSize, storageLimit);
+        
+        if (!quotaValidation.valid) {
+          return res.status(400).json({
+            success: false,
+            message: quotaValidation.message,
+            quota: {
+              currentUsage: quotaValidation.currentUsage,
+              storageLimit: quotaValidation.storageLimit,
+              availableSpace: quotaValidation.availableSpace
+            }
+          });
+        }
+      }
+
+      const metadata = {
+        'user-id': req.user.id,
+        'file-size': fileSize.toString(),
+        'is-cli-upload': isCliRequest.toString()
+      };
+
+      const result = await storageService.initiateMultipartUpload(filename, contentType, metadata);
+      
+      return res.status(200).json({
+        success: true,
+        message: 'Multipart upload initiated successfully',
+        data: result
+      });
+    } catch (error) {
+      console.error('Error initiating multipart upload:', error);
+      return res.status(500).json({
+        success: false,
+        message: error.message || 'Error initiating multipart upload'
+      });
+    }
+  }
+
+  /**
+   * Get presigned URL for uploading a specific part
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   */
+  async getMultipartUploadPartUrl(req, res) {
+    try {
+      const { key, uploadId, partNumber } = req.body;
+      
+      if (!key || !uploadId || !partNumber) {
+        return res.status(400).json({
+          success: false,
+          message: 'Missing required parameters: key, uploadId, and partNumber'
+        });
+      }
+
+      // Check if user is authenticated
+      if (!req.user) {
+        return res.status(401).json({
+          success: false,
+          message: 'Authentication required for multipart uploads'
+        });
+      }
+
+      // Validate part number (1-10000 as per S3 limits)
+      if (partNumber < 1 || partNumber > 10000) {
+        return res.status(400).json({
+          success: false,
+          message: 'Part number must be between 1 and 10000'
+        });
+      }
+
+      const presignedUrl = await storageService.getUploadPartUrl(key, uploadId, parseInt(partNumber));
+      
+      return res.status(200).json({
+        success: true,
+        message: 'Part upload URL generated successfully',
+        data: {
+          presignedUrl,
+          partNumber: parseInt(partNumber)
+        }
+      });
+    } catch (error) {
+      console.error('Error generating part upload URL:', error);
+      return res.status(500).json({
+        success: false,
+        message: error.message || 'Error generating part upload URL'
+      });
+    }
+  }
+
+  /**
+   * Complete multipart upload
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   */
+  async completeMultipartUpload(req, res) {
+    try {
+      const { key, uploadId, parts } = req.body;
+      
+      if (!key || !uploadId || !parts || !Array.isArray(parts)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Missing required parameters: key, uploadId, and parts array'
+        });
+      }
+
+      // Check if user is authenticated
+      if (!req.user) {
+        return res.status(401).json({
+          success: false,
+          message: 'Authentication required for multipart uploads'
+        });
+      }
+
+      // Validate parts array
+      for (const part of parts) {
+        if (!part.ETag || !part.PartNumber) {
+          return res.status(400).json({
+            success: false,
+            message: 'Each part must have ETag and PartNumber'
+          });
+        }
+      }
+
+      // Sort parts by PartNumber to ensure correct order
+      const sortedParts = parts.sort((a, b) => a.PartNumber - b.PartNumber);
+
+      const result = await storageService.completeMultipartUpload(key, uploadId, sortedParts);
+      
+      // Extract post-processing options from the request body
+      const options = {
+        generateThumbnails: req.body.generateThumbnails === 'true' || req.body.generateThumbnails === true,
+      };
+
+      // Check if this is a CLI request
+      const isCliRequest = req.headers.authorization && req.headers.authorization.startsWith('Bearer ') && req.headers.authorization.length > 50;
+
+      // Complete the upload processing (similar to completeDirectUpload)
+      const finalResult = await storageService.completeDirectUpload(key, true, options, req.user, isCliRequest);
+      
+      return res.status(200).json({
+        success: true,
+        message: 'Multipart upload completed successfully',
+        data: finalResult
+      });
+    } catch (error) {
+      console.error('Error completing multipart upload:', error);
+      return res.status(500).json({
+        success: false,
+        message: error.message || 'Error completing multipart upload'
+      });
+    }
+  }
+
+  /**
+   * Abort multipart upload
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   */
+  async abortMultipartUpload(req, res) {
+    try {
+      const { key, uploadId } = req.body;
+      
+      if (!key || !uploadId) {
+        return res.status(400).json({
+          success: false,
+          message: 'Missing required parameters: key and uploadId'
+        });
+      }
+
+      // Check if user is authenticated
+      if (!req.user) {
+        return res.status(401).json({
+          success: false,
+          message: 'Authentication required for multipart uploads'
+        });
+      }
+
+      await storageService.abortMultipartUpload(key, uploadId);
+      
+      return res.status(200).json({
+        success: true,
+        message: 'Multipart upload aborted successfully'
+      });
+    } catch (error) {
+      console.error('Error aborting multipart upload:', error);
+      return res.status(500).json({
+        success: false,
+        message: error.message || 'Error aborting multipart upload'
+      });
+    }
+  }
+
+  /**
    * Delete a file
    * @param {Object} req - Express request object
    * @param {Object} res - Express response object

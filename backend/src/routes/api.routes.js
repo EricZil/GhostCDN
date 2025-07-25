@@ -411,6 +411,202 @@ router.delete('/files/:fileId',
   }
 );
 
+/**
+ * POST /api/v1/files/multipart/initiate
+ * Initiate multipart upload for large files
+ */
+router.post('/files/multipart/initiate',
+  requirePermissions(['files.write']),
+  async (req, res) => {
+    try {
+      const { filename, contentType, fileSize } = req.body;
+      
+      if (!filename || !contentType || !fileSize) {
+        return res.status(400).json({
+          success: false,
+          error: 'Missing required file information (filename, contentType, fileSize)',
+          code: 'MISSING_FILE_INFO'
+        });
+      }
+
+      // Validate file size - 50GB limit for API users
+      const maxSize = 50 * 1024 * 1024 * 1024; // 50GB
+      if (fileSize > maxSize) {
+        return res.status(400).json({
+          success: false,
+          error: `File size exceeds the limit of ${maxSize / (1024 * 1024 * 1024)}GB`,
+          code: 'FILE_TOO_LARGE'
+        });
+      }
+
+      const metadata = {
+        'user-id': req.user.id,
+        'file-size': fileSize.toString(),
+        'is-api-upload': 'true'
+      };
+
+      const result = await storageService.initiateMultipartUpload(filename, contentType, metadata);
+      
+      res.status(200).json({
+        success: true,
+        data: result,
+        message: 'Multipart upload initiated successfully'
+      });
+    } catch (error) {
+      console.error('[API Multipart Initiate] Error:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to initiate multipart upload',
+        code: 'MULTIPART_INITIATE_ERROR'
+      });
+    }
+  }
+);
+
+/**
+ * POST /api/v1/files/multipart/part-url
+ * Get presigned URL for uploading a specific part
+ */
+router.post('/files/multipart/part-url',
+  requirePermissions(['files.write']),
+  async (req, res) => {
+    try {
+      const { key, uploadId, partNumber } = req.body;
+      
+      if (!key || !uploadId || !partNumber) {
+        return res.status(400).json({
+          success: false,
+          error: 'Missing required parameters: key, uploadId, and partNumber',
+          code: 'MISSING_PARAMETERS'
+        });
+      }
+
+      // Validate part number (1-10000 as per S3 limits)
+      if (partNumber < 1 || partNumber > 10000) {
+        return res.status(400).json({
+          success: false,
+          error: 'Part number must be between 1 and 10000',
+          code: 'INVALID_PART_NUMBER'
+        });
+      }
+
+      const presignedUrl = await storageService.getUploadPartUrl(key, uploadId, parseInt(partNumber));
+      
+      res.status(200).json({
+        success: true,
+        data: {
+          presignedUrl,
+          partNumber: parseInt(partNumber)
+        },
+        message: 'Part upload URL generated successfully'
+      });
+    } catch (error) {
+      console.error('[API Multipart Part URL] Error:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to generate part upload URL',
+        code: 'PART_URL_ERROR'
+      });
+    }
+  }
+);
+
+/**
+ * POST /api/v1/files/multipart/complete
+ * Complete multipart upload
+ */
+router.post('/files/multipart/complete',
+  requirePermissions(['files.write']),
+  async (req, res) => {
+    try {
+      const { key, uploadId, parts } = req.body;
+      
+      if (!key || !uploadId || !parts || !Array.isArray(parts)) {
+        return res.status(400).json({
+          success: false,
+          error: 'Missing required parameters: key, uploadId, and parts array',
+          code: 'MISSING_PARAMETERS'
+        });
+      }
+
+      // Validate parts array
+      for (const part of parts) {
+        if (!part.ETag || !part.PartNumber) {
+          return res.status(400).json({
+            success: false,
+            error: 'Each part must have ETag and PartNumber',
+            code: 'INVALID_PARTS'
+          });
+        }
+      }
+
+      // Sort parts by PartNumber to ensure correct order
+      const sortedParts = parts.sort((a, b) => a.PartNumber - b.PartNumber);
+
+      const result = await storageService.completeMultipartUpload(key, uploadId, sortedParts);
+      
+      // Extract post-processing options from the request body
+      const options = {
+        generateThumbnails: req.body.generateThumbnails === 'true' || req.body.generateThumbnails === true,
+        customName: req.body.customName,
+        isPublic: req.body.isPublic === 'true' || req.body.isPublic === true,
+        tags: req.body.tags ? (Array.isArray(req.body.tags) ? req.body.tags : [req.body.tags]) : []
+      };
+
+      // Complete the upload processing
+      const finalResult = await storageService.completeDirectUpload(key, true, options, req.user, true);
+      
+      res.status(200).json({
+        success: true,
+        data: finalResult,
+        message: 'Multipart upload completed successfully'
+      });
+    } catch (error) {
+      console.error('[API Multipart Complete] Error:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to complete multipart upload',
+        code: 'MULTIPART_COMPLETE_ERROR'
+      });
+    }
+  }
+);
+
+/**
+ * POST /api/v1/files/multipart/abort
+ * Abort multipart upload
+ */
+router.post('/files/multipart/abort',
+  requirePermissions(['files.write']),
+  async (req, res) => {
+    try {
+      const { key, uploadId } = req.body;
+      
+      if (!key || !uploadId) {
+        return res.status(400).json({
+          success: false,
+          error: 'Missing required parameters: key and uploadId',
+          code: 'MISSING_PARAMETERS'
+        });
+      }
+
+      await storageService.abortMultipartUpload(key, uploadId);
+      
+      res.status(200).json({
+        success: true,
+        message: 'Multipart upload aborted successfully'
+      });
+    } catch (error) {
+      console.error('[API Multipart Abort] Error:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to abort multipart upload',
+        code: 'MULTIPART_ABORT_ERROR'
+      });
+    }
+  }
+);
+
 
 
 /**

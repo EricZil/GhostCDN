@@ -40,7 +40,7 @@ function showWelcome() {
   console.log(chalk.white('           Professional File Upload CLI'));
   console.log(chalk.dim('           Secure • Fast • Reliable'));
   console.log('');
-  console.log(chalk.yellow('           Version 1.0.0') + ' | ' + chalk.blue('https://ghostcdn.xyz'));
+  console.log(chalk.yellow('           Version 1.0.3') + ' | ' + chalk.blue('https://ghostcdn.xyz'));
   console.log(chalk.cyan('═'.repeat(60)));
   console.log('');
 }

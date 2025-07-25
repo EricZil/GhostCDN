@@ -30,6 +30,20 @@ router.post('/presigned/user', extractToken, optionalNextAuthJWT, uploadControll
 router.post('/complete/guest/:fileKey', uploadController.completeGuestUpload);
 router.post('/complete/user/:fileKey', extractToken, optionalNextAuthJWT, uploadController.completeUserUpload);
 
+// ===== MULTIPART UPLOAD ROUTES =====
+
+// Initiate multipart upload
+router.post('/multipart/initiate', extractToken, optionalNextAuthJWT, uploadController.initiateMultipartUpload);
+
+// Get presigned URL for uploading a specific part
+router.post('/multipart/part-url', extractToken, optionalNextAuthJWT, uploadController.getMultipartUploadPartUrl);
+
+// Complete multipart upload
+router.post('/multipart/complete', extractToken, optionalNextAuthJWT, uploadController.completeMultipartUpload);
+
+// Abort multipart upload
+router.post('/multipart/abort', extractToken, optionalNextAuthJWT, uploadController.abortMultipartUpload);
+
 // Delete file route
 router.delete('/:fileKey', uploadController.deleteFile);
 

@@ -56,6 +56,7 @@ const {
   MAX_FILE_SIZE,
   SUPPORTED_FILE_TYPES,
   UPLOAD_OPTIONS,
+  UPLOAD_PERFORMANCE,
   UPLOAD_TIMEOUT,
   ERROR_MESSAGES,
   SUCCESS_MESSAGES
@@ -575,8 +576,13 @@ class UploadManager {
       // Store file size for success display
       this.lastFileSize = fileInfo.size;
 
-      // For large files, use streaming upload with progress
-      if (fileInfo.size > 100 * 1024 * 1024) { // Files larger than 100MB
+      // Determine upload method based on file size
+      if (fileInfo.size > 1024 * 1024 * 1024) { // Files larger than 1GB use multipart upload
+        spinner.stop();
+        console.log(chalk.cyan('\n📤 Uploading very large file using multipart upload...\n'));
+        
+        return await this.uploadMultipartFile(filePath, fileInfo, options);
+      } else if (fileInfo.size > 100 * 1024 * 1024) { // Files 100MB-1GB use streaming upload
         spinner.stop();
         console.log(chalk.cyan('\n📤 Uploading large file with progress tracking...\n'));
         
@@ -747,6 +753,292 @@ class UploadManager {
     if (opened) {
       showSuccess('Opened in browser!');
     }
+  }
+
+  /**
+   * Get optimal upload performance settings based on user's connection
+   */
+  getUploadPerformanceSettings() {
+    // Try to get user's preferred profile from settings
+    const settings = this.settings.loadSettings();
+    const preferredProfile = settings.uploadPerformance?.profile;
+    
+    if (preferredProfile && UPLOAD_PERFORMANCE.PROFILES[preferredProfile]) {
+      console.log(chalk.cyan(`📊 Using ${preferredProfile.toLowerCase()} upload profile`));
+      return UPLOAD_PERFORMANCE.PROFILES[preferredProfile];
+    }
+    
+    // Default to FAST profile for users with good internet (like the user mentioned)
+    console.log(chalk.cyan('📊 Using fast upload profile (optimized for good internet)'));
+    return UPLOAD_PERFORMANCE.PROFILES.FAST;
+  }
+
+  /**
+   * Upload very large file using multipart upload
+   */
+  async uploadMultipartFile(filePath, fileInfo, options) {
+    // Get optimized configuration based on user's connection
+    const perfSettings = this.getUploadPerformanceSettings();
+    const PART_SIZE = perfSettings.PART_SIZE;
+    const MAX_CONCURRENT_UPLOADS = perfSettings.MAX_CONCURRENT_UPLOADS;
+    const PART_TIMEOUT = perfSettings.PART_TIMEOUT;
+    const MAX_PARTS = 10000; // S3 limit
+    
+    try {
+      // Step 1: Initiate multipart upload
+      console.log(chalk.cyan('🚀 Initiating multipart upload...'));
+      
+      const initiateResponse = await axios.post(
+        `${API_BASE_URL}/files/multipart/initiate`,
+        {
+          filename: fileInfo.name,
+          contentType: fileInfo.mimeType,
+          fileSize: fileInfo.size,
+          preserveFilename: options.preserveFilename,
+          optimize: options.optimize,
+          generateThumbnails: options.generateThumbnails
+        },
+        {
+          headers: {
+            'Authorization': `Bearer ${this.authManager.getApiKey()}`,
+            'Content-Type': 'application/json'
+          },
+          timeout: 30000
+        }
+      );
+
+      if (!initiateResponse.data.success) {
+        throw new Error(initiateResponse.data.message || 'Failed to initiate multipart upload');
+      }
+
+      const { uploadId, key } = initiateResponse.data.data;
+      console.log(chalk.green('✅ Multipart upload initiated'));
+
+      // Step 2: Calculate parts
+      const totalParts = Math.ceil(fileInfo.size / PART_SIZE);
+      
+      if (totalParts > MAX_PARTS) {
+        throw new Error(`File too large: requires ${totalParts} parts, maximum is ${MAX_PARTS}`);
+      }
+
+      console.log(chalk.cyan(`📦 Uploading ${totalParts} parts...\n`));
+
+      // Step 3: Upload parts concurrently
+      const uploadedParts = [];
+      const progressBar = createProgressBar();
+      let totalUploadedBytes = 0;
+      
+      this.uploadStartTime = Date.now();
+      
+      // Create upload queue for concurrent processing
+      const uploadQueue = [];
+      for (let partNumber = 1; partNumber <= totalParts; partNumber++) {
+        uploadQueue.push(partNumber);
+      }
+      
+      // Process uploads concurrently
+      const uploadPromises = [];
+      const activeUploads = new Set();
+      
+      const uploadPart = async (partNumber) => {
+        const start = (partNumber - 1) * PART_SIZE;
+        const end = Math.min(start + PART_SIZE, fileInfo.size);
+        const partSize = end - start;
+
+        try {
+          activeUploads.add(partNumber);
+          
+          // Get presigned URL for this part
+          const partUrlResponse = await axios.post(
+            `${API_BASE_URL}/files/multipart/part-url`,
+            {
+              key: key,
+              uploadId: uploadId,
+              partNumber: partNumber
+            },
+            {
+              headers: {
+                'Authorization': `Bearer ${this.authManager.getApiKey()}`,
+                'Content-Type': 'application/json'
+              },
+              timeout: 30000
+            }
+          );
+
+          if (!partUrlResponse.data.success) {
+            throw new Error(`Failed to get URL for part ${partNumber}`);
+          }
+
+          const partUrl = partUrlResponse.data.data.presignedUrl;
+
+          // Upload this part with optimized settings
+          const partData = await this.readFilePart(filePath, start, partSize);
+          
+          const uploadResponse = await axios.put(partUrl, partData, {
+            headers: {
+              'Content-Type': fileInfo.mimeType,
+              'Content-Length': partSize
+            },
+            timeout: PART_TIMEOUT,
+            maxContentLength: Infinity,
+            maxBodyLength: Infinity,
+            // Add HTTP/2 and connection optimization
+            httpAgent: false,
+            httpsAgent: false
+          });
+
+          // Extract ETag from response headers
+          const etag = uploadResponse.headers.etag;
+          if (!etag) {
+            throw new Error(`No ETag received for part ${partNumber}`);
+          }
+
+          // Thread-safe update of shared state
+          uploadedParts[partNumber - 1] = {
+            PartNumber: partNumber,
+            ETag: etag
+          };
+
+          totalUploadedBytes += partSize;
+          const progress = totalUploadedBytes / fileInfo.size;
+          const speed = this.calculateUploadSpeed(totalUploadedBytes);
+          const eta = this.calculateETA(totalUploadedBytes, fileInfo.size, speed);
+
+          progressBar.update(progress, {
+            filename: fileInfo.name,
+            uploaded: formatBytes(totalUploadedBytes),
+            total: formatBytes(fileInfo.size),
+            speed: formatBytes(speed) + '/s',
+            eta: eta,
+            part: `${uploadedParts.filter(p => p).length}/${totalParts}`,
+            concurrent: activeUploads.size
+          });
+          
+          activeUploads.delete(partNumber);
+
+        } catch (error) {
+          activeUploads.delete(partNumber);
+          progressBar.stop();
+          console.log(chalk.red(`\n❌ Failed to upload part ${partNumber}: ${error.message}`));
+          
+          // Abort the multipart upload
+          try {
+            await axios.post(
+              `${API_BASE_URL}/files/multipart/abort`,
+              { key: key, uploadId: uploadId },
+              {
+                headers: {
+                  'Authorization': `Bearer ${this.authManager.getApiKey()}`,
+                  'Content-Type': 'application/json'
+                }
+              }
+            );
+            console.log(chalk.yellow('🗑️  Multipart upload aborted'));
+          } catch (abortError) {
+            console.log(chalk.red('Failed to abort multipart upload'));
+          }
+          
+          throw error;
+        }
+      };
+      
+      // Process uploads with controlled concurrency
+      while (uploadQueue.length > 0 || uploadPromises.length > 0) {
+        // Start new uploads up to the concurrency limit
+        while (uploadQueue.length > 0 && uploadPromises.length < MAX_CONCURRENT_UPLOADS) {
+          const partNumber = uploadQueue.shift();
+          const promise = uploadPart(partNumber);
+          uploadPromises.push(promise);
+        }
+        
+        // Wait for at least one upload to complete
+        if (uploadPromises.length > 0) {
+          try {
+            await Promise.race(uploadPromises);
+            // Remove completed promises
+            for (let i = uploadPromises.length - 1; i >= 0; i--) {
+              const promise = uploadPromises[i];
+              if (await Promise.race([promise, Promise.resolve('pending')]) !== 'pending') {
+                uploadPromises.splice(i, 1);
+              }
+            }
+          } catch (error) {
+            // If any upload fails, wait for all to complete/fail and then throw
+            await Promise.allSettled(uploadPromises);
+            throw error;
+          }
+        }
+      }
+      
+      // Wait for any remaining uploads to complete
+      if (uploadPromises.length > 0) {
+        await Promise.all(uploadPromises);
+      }
+      
+      // Filter out any undefined parts and sort by part number
+      const validParts = uploadedParts.filter(part => part).sort((a, b) => a.PartNumber - b.PartNumber);
+
+      progressBar.stop();
+      console.log(chalk.green('\n✅ All parts uploaded successfully!'));
+      console.log(chalk.cyan(`📊 Upload completed with ${MAX_CONCURRENT_UPLOADS} concurrent connections`));
+
+      // Step 4: Complete multipart upload
+      console.log(chalk.cyan('🔗 Completing multipart upload...'));
+      
+      const completeResponse = await axios.post(
+        `${API_BASE_URL}/files/multipart/complete`,
+        {
+          key: key,
+          uploadId: uploadId,
+          parts: validParts,
+          generateThumbnails: options.generateThumbnails,
+          isPublic: options.isPublic,
+          customName: options.customName || null
+        },
+        {
+          headers: {
+            'Authorization': `Bearer ${this.authManager.getApiKey()}`,
+            'Content-Type': 'application/json'
+          },
+          timeout: 60000 // 1 minute for completion
+        }
+      );
+
+      if (!completeResponse.data.success) {
+        throw new Error(completeResponse.data.message || 'Failed to complete multipart upload');
+      }
+
+      console.log(chalk.green('🎉 Multipart upload completed successfully!'));
+      return completeResponse.data.data;
+
+    } catch (error) {
+      console.log(chalk.red('\n❌ Multipart upload failed'));
+      throw error;
+    }
+  }
+
+  /**
+   * Read a specific part of a file
+   */
+  async readFilePart(filePath, start, size) {
+    return new Promise((resolve, reject) => {
+      const buffer = Buffer.alloc(size);
+      const fd = fs.openSync(filePath, 'r');
+      
+      try {
+        const bytesRead = fs.readSync(fd, buffer, 0, size, start);
+        fs.closeSync(fd);
+        
+        if (bytesRead !== size) {
+           reject(new Error(`Expected to read ${size} bytes, but read ${bytesRead}`));
+        } else {
+          resolve(buffer);
+        }
+      } catch (error) {
+        fs.closeSync(fd);
+        reject(error);
+      }
+    });
   }
 
   /**

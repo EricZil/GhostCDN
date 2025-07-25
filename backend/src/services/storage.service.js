@@ -1,7 +1,7 @@
 const { S3Client, DeleteObjectCommand } = require('@aws-sdk/client-s3');
 const { Upload } = require('@aws-sdk/lib-storage');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
-const { PutObjectCommand, HeadObjectCommand, PutObjectAclCommand, GetObjectCommand } = require('@aws-sdk/client-s3');
+const { PutObjectCommand, HeadObjectCommand, PutObjectAclCommand, GetObjectCommand, CreateMultipartUploadCommand, UploadPartCommand, CompleteMultipartUploadCommand, AbortMultipartUploadCommand, ListPartsCommand } = require('@aws-sdk/client-s3');
 const { v4: uuidv4 } = require('uuid');
 const fs = require('fs');
 const sharp = require('sharp');
@@ -684,6 +684,168 @@ class StorageService {
       console.error('Error initializing folder structure:', error);
       // Don't throw error as folders might already exist
     }
+  }
+
+  /**
+   * Initiate multipart upload
+   * @param {string} fileName - Original file name
+   * @param {string} contentType - File content type
+   * @param {object} metadata - Additional metadata
+   * @returns {Promise<object>} Upload details
+   */
+  async initiateMultipartUpload(fileName, contentType, metadata = {}) {
+    try {
+      const bucketName = process.env.DO_SPACES_BUCKET_NAME;
+      const key = this.generateFileKey(fileName);
+      
+      const command = new CreateMultipartUploadCommand({
+        Bucket: bucketName,
+        Key: key,
+        ContentType: contentType,
+        ACL: 'public-read',
+        Metadata: {
+          'original-name': fileName,
+          'upload-timestamp': new Date().toISOString(),
+          ...metadata
+        }
+      });
+
+      const response = await doSpacesClient.send(command);
+      
+      return {
+        uploadId: response.UploadId,
+        key: key,
+        bucket: bucketName
+      };
+    } catch (error) {
+      console.error('Error initiating multipart upload:', error);
+      throw new Error('Failed to initiate multipart upload');
+    }
+  }
+
+  /**
+   * Get presigned URL for uploading a part
+   * @param {string} key - File key
+   * @param {string} uploadId - Upload ID
+   * @param {number} partNumber - Part number
+   * @returns {Promise<string>} Presigned URL
+   */
+  async getUploadPartUrl(key, uploadId, partNumber) {
+    try {
+      const bucketName = process.env.DO_SPACES_BUCKET_NAME;
+      
+      const command = new UploadPartCommand({
+        Bucket: bucketName,
+        Key: key,
+        UploadId: uploadId,
+        PartNumber: partNumber
+      });
+
+      const presignedUrl = await getSignedUrl(doSpacesClient, command, {
+        expiresIn: 3600 // 1 hour
+      });
+
+      return presignedUrl;
+    } catch (error) {
+      console.error('Error generating upload part URL:', error);
+      throw new Error('Failed to generate upload part URL');
+    }
+  }
+
+  /**
+   * Complete multipart upload
+   * @param {string} key - File key
+   * @param {string} uploadId - Upload ID
+   * @param {Array} parts - Array of uploaded parts
+   * @returns {Promise<object>} Upload result
+   */
+  async completeMultipartUpload(key, uploadId, parts) {
+    try {
+      const bucketName = process.env.DO_SPACES_BUCKET_NAME;
+      
+      const command = new CompleteMultipartUploadCommand({
+        Bucket: bucketName,
+        Key: key,
+        UploadId: uploadId,
+        MultipartUpload: {
+          Parts: parts.map(part => ({
+            ETag: part.ETag,
+            PartNumber: part.PartNumber
+          }))
+        }
+      });
+
+      const response = await doSpacesClient.send(command);
+      
+      return {
+        location: response.Location,
+        bucket: response.Bucket,
+        key: response.Key,
+        etag: response.ETag
+      };
+    } catch (error) {
+      console.error('Error completing multipart upload:', error);
+      throw new Error('Failed to complete multipart upload');
+    }
+  }
+
+  /**
+   * Abort multipart upload
+   * @param {string} key - File key
+   * @param {string} uploadId - Upload ID
+   * @returns {Promise<boolean>} Success status
+   */
+  async abortMultipartUpload(key, uploadId) {
+    try {
+      const bucketName = process.env.DO_SPACES_BUCKET_NAME;
+      
+      const command = new AbortMultipartUploadCommand({
+        Bucket: bucketName,
+        Key: key,
+        UploadId: uploadId
+      });
+
+      await doSpacesClient.send(command);
+      return true;
+    } catch (error) {
+      console.error('Error aborting multipart upload:', error);
+      throw new Error('Failed to abort multipart upload');
+    }
+  }
+
+  /**
+   * List uploaded parts
+   * @param {string} key - File key
+   * @param {string} uploadId - Upload ID
+   * @returns {Promise<Array>} List of parts
+   */
+  async listUploadParts(key, uploadId) {
+    try {
+      const bucketName = process.env.DO_SPACES_BUCKET_NAME;
+      
+      const command = new ListPartsCommand({
+        Bucket: bucketName,
+        Key: key,
+        UploadId: uploadId
+      });
+
+      const response = await doSpacesClient.send(command);
+      return response.Parts || [];
+    } catch (error) {
+      console.error('Error listing upload parts:', error);
+      throw new Error('Failed to list upload parts');
+    }
+  }
+
+  /**
+   * Generate file key for guest uploads
+   * @param {string} fileName - Original file name
+   * @returns {string} Generated file key
+   */
+  generateFileKey(fileName) {
+    const fileExtension = path.extname(fileName).toLowerCase();
+    const finalFileName = `${uuidv4()}${fileExtension}`;
+    return `Guests/${finalFileName}`;
   }
 }
 
