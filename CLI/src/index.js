@@ -67,24 +67,53 @@ process.on('SIGTERM', async () => {
 
 // Handle uncaught exceptions
 process.on('uncaughtException', (error) => {
-  console.error(chalk.red('\n💥 An unexpected error occurred:'));
-  console.error(chalk.red(error.message));
-  console.error(chalk.dim(error.stack));
-  console.error(chalk.red('Please restart the application and try again.'));
-  console.log('\nPress any key to exit...');
-  process.stdin.setRawMode(true);
-  process.stdin.resume();
-  process.stdin.on('data', () => process.exit(1));
+  try {
+    // Clean up stdin if in raw mode
+    if (process.stdin.isRaw) {
+      process.stdin.setRawMode(false);
+    }
+    
+    console.error(chalk.red('\n💥 An unexpected error occurred:'));
+    console.error(chalk.red(error.message));
+    
+    // Only show stack trace in debug mode
+    if (process.env.DEBUG || process.argv.includes('--debug')) {
+      console.error(chalk.dim(error.stack));
+    }
+    
+    console.error(chalk.red('Please restart the application and try again.'));
+    
+    // Graceful exit without waiting for input in executable mode
+    setTimeout(() => {
+      process.exit(1);
+    }, 2000);
+    
+  } catch (cleanupError) {
+    // If cleanup fails, force exit
+    process.exit(1);
+  }
 });
 
 process.on('unhandledRejection', (reason, promise) => {
-  console.error(chalk.red('\n💥 An unexpected error occurred:'));
-  console.error(chalk.red(reason));
-  console.error(chalk.red('Please restart the application and try again.'));
-  console.log('\nPress any key to exit...');
-  process.stdin.setRawMode(true);
-  process.stdin.resume();
-  process.stdin.on('data', () => process.exit(1));
+  try {
+    // Clean up stdin if in raw mode
+    if (process.stdin.isRaw) {
+      process.stdin.setRawMode(false);
+    }
+    
+    console.error(chalk.red('\n💥 An unexpected error occurred:'));
+    console.error(chalk.red(reason));
+    console.error(chalk.red('Please restart the application and try again.'));
+    
+    // Graceful exit without waiting for input in executable mode
+    setTimeout(() => {
+      process.exit(1);
+    }, 2000);
+    
+  } catch (cleanupError) {
+    // If cleanup fails, force exit
+    process.exit(1);
+  }
 });
 
 // Start the CLI

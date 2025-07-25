@@ -81,7 +81,7 @@ class AuthManager {
       const key = crypto.scryptSync(machineId, 'ghostcdn-salt', 32);
       
       const iv = crypto.randomBytes(16);
-      const cipher = crypto.createCipher(algorithm, key);
+      const cipher = crypto.createCipheriv(algorithm, key, iv);
       
       const jsonString = JSON.stringify(data);
       let encrypted = cipher.update(jsonString, 'utf8', 'hex');
@@ -89,7 +89,8 @@ class AuthManager {
       
       return {
         encrypted,
-        iv: iv.toString('hex')
+        iv: iv.toString('hex'),
+        algorithm
       };
     } catch (error) {
       // Fallback to base64 encoding if crypto fails
@@ -116,7 +117,24 @@ class AuthManager {
         return JSON.parse(jsonString);
       }
       
-      // Handle proper encryption
+      // Handle proper encryption with IV
+      if (encryptedData.iv && encryptedData.encrypted) {
+        const crypto = require('crypto');
+        const algorithm = encryptedData.algorithm || 'aes-256-cbc';
+        
+        const machineId = require('os').hostname() + require('os').platform() + require('os').arch();
+        const key = crypto.scryptSync(machineId, 'ghostcdn-salt', 32);
+        const iv = Buffer.from(encryptedData.iv, 'hex');
+        
+        const decipher = crypto.createDecipheriv(algorithm, key, iv);
+        
+        let decrypted = decipher.update(encryptedData.encrypted, 'hex', 'utf8');
+        decrypted += decipher.final('utf8');
+        
+        return JSON.parse(decrypted);
+      }
+      
+      // Handle legacy encryption without IV (for backward compatibility)
       const crypto = require('crypto');
       const algorithm = 'aes-256-cbc';
       
@@ -130,6 +148,10 @@ class AuthManager {
       
       return JSON.parse(decrypted);
     } catch (error) {
+      // Log decryption errors for debugging
+      if (process.env.DEBUG || process.argv.includes('--debug')) {
+        console.error(chalk.dim(`Decryption error: ${error.message}`));
+      }
       return null;
     }
   }
@@ -199,7 +221,17 @@ class AuthManager {
         return null;
       }
 
-      const encryptedData = fs.readFileSync(this.credentialsFile, 'utf8');
+      const fileContent = fs.readFileSync(this.credentialsFile, 'utf8');
+      
+      // Parse JSON string to get encrypted data object
+      let encryptedData;
+      try {
+        encryptedData = JSON.parse(fileContent);
+      } catch (parseError) {
+        // Handle legacy format (direct string)
+        encryptedData = fileContent;
+      }
+      
       const credentials = this.decryptCredentials(encryptedData);
       
       if (credentials && credentials.apiKey) {
@@ -208,6 +240,13 @@ class AuthManager {
       return null;
     } catch (error) {
       console.error('Error reading stored credentials:', error.message);
+      
+      // Log more details for debugging
+      if (process.env.DEBUG || process.argv.includes('--debug')) {
+        console.error(chalk.dim(`Credentials file: ${this.credentialsFile}`));
+        console.error(chalk.dim(`Error stack: ${error.stack}`));
+      }
+      
       return null;
     }
   }
@@ -236,62 +275,142 @@ class AuthManager {
       };
       
       const askPassword = (question) => {
-        return new Promise((resolve) => {
-          process.stdout.write(question);
-          process.stdin.setRawMode(true);
-          process.stdin.resume();
-          
-          // Dynamic user input buffer - not a hardcoded secret
+        return new Promise((resolve, reject) => {
           let userInput = '';
-          process.stdin.on('data', function(char) {
-            char = char + '';
+          let dataHandler = null;
+          
+          try {
+            process.stdout.write(question);
             
-            switch (char) {
-              case '\n':
-              case '\r':
-              case '\u0004':
-                process.stdin.setRawMode(false);
-                process.stdin.pause();
-                process.stdout.write('\n');
-                resolve(userInput);
-                break;
-              case '\u0003':
-                process.exit();
-                break;
-              default:
-                if (char.charCodeAt(0) === 8) {
-                  // Backspace handling - remove last character from input buffer
-                  if (userInput.length > 0) {
-                    userInput = userInput.slice(0, -1);
-                    process.stdout.write('\b \b');
-                  }
-                } else {
-                  userInput += char;
-                  process.stdout.write('*');
+            // Store original stdin state
+            const originalRawMode = process.stdin.isRaw;
+            const originalResumed = process.stdin.readableFlowing !== null;
+            
+            process.stdin.setRawMode(true);
+            process.stdin.resume();
+            
+            dataHandler = function(char) {
+              try {
+                char = char.toString();
+                
+                switch (char) {
+                  case '\n':
+                  case '\r':
+                  case '\u0004': // Ctrl+D
+                    cleanup();
+                    resolve(userInput);
+                    break;
+                  case '\u0003': // Ctrl+C
+                    cleanup();
+                    process.exit(0);
+                    break;
+                  case '\u001b': // ESC
+                    cleanup();
+                    reject(new Error('Input cancelled'));
+                    break;
+                  default:
+                    if (char.charCodeAt(0) === 8 || char.charCodeAt(0) === 127) {
+                      // Backspace or Delete
+                      if (userInput.length > 0) {
+                        userInput = userInput.slice(0, -1);
+                        process.stdout.write('\b \b');
+                      }
+                    } else if (char.charCodeAt(0) >= 32) {
+                      // Printable characters only
+                      userInput += char;
+                      process.stdout.write('*');
+                    }
+                    break;
                 }
-                break;
+              } catch (error) {
+                cleanup();
+                reject(error);
+              }
+            };
+            
+            const cleanup = () => {
+              try {
+                if (dataHandler) {
+                  process.stdin.removeListener('data', dataHandler);
+                  dataHandler = null;
+                }
+                
+                // Restore original stdin state
+                if (originalRawMode !== undefined) {
+                  process.stdin.setRawMode(originalRawMode);
+                }
+                
+                if (!originalResumed) {
+                  process.stdin.pause();
+                }
+                
+                process.stdout.write('\n');
+              } catch (error) {
+                // Ignore cleanup errors
+              }
+            };
+            
+            process.stdin.on('data', dataHandler);
+            
+            // Add timeout to prevent hanging
+            const timeout = setTimeout(() => {
+              cleanup();
+              reject(new Error('Input timeout'));
+            }, 300000); // 5 minutes
+            
+            // Clear timeout when resolved
+            const originalResolve = resolve;
+            const originalReject = reject;
+            
+            resolve = (value) => {
+              clearTimeout(timeout);
+              originalResolve(value);
+            };
+            
+            reject = (error) => {
+              clearTimeout(timeout);
+              originalReject(error);
+            };
+            
+          } catch (error) {
+            if (dataHandler) {
+              process.stdin.removeListener('data', dataHandler);
             }
-          });
+            reject(error);
+          }
         });
       };
       
       let apiKey;
       while (true) {
-        apiKey = await askPassword('API Key: ');
-        
-        if (!apiKey || apiKey.trim().length === 0) {
-          console.log(chalk.red('API key is required'));
-          continue;
+        try {
+          apiKey = await askPassword('API Key: ');
+          
+          if (!apiKey || apiKey.trim().length === 0) {
+            console.log(chalk.red('API key is required'));
+            continue;
+          }
+          if (!apiKey.startsWith('gcdn_')) {
+            console.log(chalk.red('Invalid API key format. API keys should start with "gcdn_"'));
+            continue;
+          }
+          if (apiKey.length < 20) {
+            console.log(chalk.red('API key appears to be too short'));
+            continue;
+          }
+          break;
+        } catch (error) {
+          if (error.message === 'Input cancelled') {
+            console.log(chalk.yellow('\nLogin cancelled by user'));
+            return false;
+          } else if (error.message === 'Input timeout') {
+            console.log(chalk.red('\nInput timeout. Please try again.'));
+            return false;
+          } else {
+            console.log(chalk.red(`\nInput error: ${error.message}`));
+            return false;
+          }
         }
-        if (!apiKey.startsWith('gcdn_')) {
-          console.log(chalk.red('Invalid API key format. API keys should start with "gcdn_"'));
-          continue;
-        }
-        if (apiKey.length < 20) {
-          console.log(chalk.red('API key appears to be too short'));
-          continue;
-        }
-        break;
       }
       
       const saveResponse = await askQuestion('Save credentials securely for future use? (Y/n): ');
@@ -381,11 +500,27 @@ class AuthManager {
         service: this.serviceName
       };
       const encrypted = this.encryptCredentials(credentials);
-      fs.writeFileSync(this.credentialsFile, encrypted, { mode: 0o600 });
+      
+      // Convert encrypted object to JSON string for file storage
+      const dataToWrite = JSON.stringify(encrypted);
+      
+      fs.writeFileSync(this.credentialsFile, dataToWrite, { 
+        mode: 0o600,
+        encoding: 'utf8'
+      });
+      
       console.log(chalk.green('✅ Credentials saved securely to local storage'));
+      console.log(chalk.dim(`Saved to: ${this.credentialsFile}`));
     } catch (error) {
       console.log(chalk.yellow('⚠️  Could not save credentials:'), error.message);
       console.log(chalk.dim('You will need to login again next time'));
+      
+      // Log more details for debugging
+      if (process.env.DEBUG || process.argv.includes('--debug')) {
+        console.log(chalk.dim(`Config dir: ${this.configDir}`));
+        console.log(chalk.dim(`Credentials file: ${this.credentialsFile}`));
+        console.log(chalk.dim(`Error stack: ${error.stack}`));
+      }
     }
   }
 
